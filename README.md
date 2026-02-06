@@ -6,18 +6,17 @@ A Windows-first game hub using wxPython and the DotPad device.
 From repo root:
 ```
 cd dgc
-uv sync
-```
-
-Install the DotPad wheel (built from `python/`):
-```
-uv pip install ../python/dist/dotpad-0.1.0-py3-none-any.whl
+.\setup.ps1
 ```
 
 ## Run
 ```
 uv run dgc
 ```
+
+## DotPad Wheel Location
+- Keep DotPad artifacts in `vendor/dotpad/` inside this repo.
+- `setup.ps1` installs the newest `dotpad-*.whl` from that folder.
 
 ## Controls (DotPad)
 - panLeft / panRight: move column
