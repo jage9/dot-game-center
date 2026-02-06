@@ -36,6 +36,7 @@ class Battleship:
         self.phase = "place"
         self.winner: Optional[str] = None
         self.last_message = f"PLACE {SHIP_NAMES[0]}"
+        self.last_message_braille = f"PLACE {SHIP_NAMES[0]}"
         self._last_rows: list[bytes] | None = None
         self._place_enemy_ships()
         self._target_queue: list[tuple[int, int]] = []
@@ -72,6 +73,7 @@ class Battleship:
         ship_name = SHIP_NAMES[ship_idx].lower()
         if not self._can_place(self.player_board, self.sel_row, self.sel_col, length, self.orientation):
             self.last_message = "INVALID PLACEMENT"
+            self.last_message_braille = "INVALID PLACEMENT"
             return
         start = self._square_name(self.sel_row, self.sel_col)
         end_row = self.sel_row + (length - 1 if self.orientation == "V" else 0)
@@ -81,34 +83,47 @@ class Battleship:
         ship_id = ship_idx + 1
         self._do_place_id(self.player_ship_ids, self.sel_row, self.sel_col, length, self.orientation, ship_id)
         self.place_index += 1
-        self.last_message = f"Placed {ship_name} from {start} to {end}"
+        self.last_message = f"placed {ship_name} from {start} to {end}"
+        self.last_message_braille = self.last_message
+        self.last_message_braille = f"placed {ship_name}"
         if self.place_index >= len(SHIP_SIZES):
             self.phase = "attack"
 
     def _fire(self) -> None:
         if self.player_shots[self.sel_row][self.sel_col] != 0:
             self.last_message = "ALREADY FIRED"
+            self.last_message_braille = "ALREADY FIRED"
             return
         hit = self.enemy_board[self.sel_row][self.sel_col] == 1
         self.player_shots[self.sel_row][self.sel_col] = 2 if hit else 1
         user_square = self._square_name(self.sel_row, self.sel_col)
-        user_part = f"Y HIT {user_square}" if hit else f"Y MISS {user_square}"
+        user_part = f"you hit {user_square}" if hit else f"you miss {user_square}"
+        user_part_braille = f"y hit {user_square}" if hit else f"y miss {user_square}"
         sunk_parts: list[str] = []
+        sunk_parts_braille: list[str] = []
         if hit:
             ship_id = self.enemy_ship_ids[self.sel_row][self.sel_col]
             if ship_id > 0 and self._is_ship_sunk(self.enemy_ship_ids, self.player_shots, ship_id):
                 if ship_id not in self._player_sunk_ids:
                     self._player_sunk_ids.add(ship_id)
-                    sunk_parts.append(f"Y SUNK {SHIP_NAMES[ship_id - 1]}")
+                    sunk = f"you sunk {SHIP_NAMES[ship_id - 1].lower()}"
+                    sunk_parts.append(sunk)
+                    sunk_parts_braille.append(sunk.replace("you", "y"))
         if self._all_sunk(self.enemy_board, self.player_shots):
             self.winner = "player"
-            self.last_message = f"{user_part} YOU WIN"
+            self.last_message = f"{user_part}, you win"
+            self.last_message_braille = f"{user_part_braille} y win"
             return
         cpu_hit, cpu_square, cpu_sunk_name = self._enemy_turn()
-        cpu_part = f"I HIT {cpu_square}" if cpu_hit else f"I MISS {cpu_square}"
+        cpu_part = f"I hit {cpu_square}" if cpu_hit else f"I miss {cpu_square}"
         if cpu_sunk_name:
-            sunk_parts.append(f"I SUNK {cpu_sunk_name}")
-        self.last_message = " ".join([user_part, cpu_part, *sunk_parts]).strip()
+            sunk = f"I sunk {cpu_sunk_name.lower()}"
+            sunk_parts.append(sunk)
+            sunk_parts_braille.append(sunk)
+        tail = f", {', '.join(sunk_parts)}" if sunk_parts else ""
+        self.last_message = f"{user_part}, {cpu_part}{tail}"
+        tail_braille = f" {' '.join(sunk_parts_braille)}" if sunk_parts_braille else ""
+        self.last_message_braille = f"{user_part_braille} {cpu_part}{tail_braille}"
 
     def _enemy_turn(self) -> tuple[bool, str, str | None]:
         r, c = self._enemy_pick()
@@ -223,6 +238,14 @@ class Battleship:
             return SHIP_NAMES[idx]
         return None
 
+    @staticmethod
+    def ship_name_from_id(ship_id: int) -> str | None:
+        """Return canonical ship name for a ship id."""
+        idx = ship_id - 1
+        if 0 <= idx < len(SHIP_NAMES):
+            return SHIP_NAMES[idx]
+        return None
+
     def render(self, pad: dp.DotPad) -> None:
         """Render the current game state to the DotPad.
 
@@ -283,17 +306,31 @@ class Battleship:
                         ship_id = self.enemy_ship_ids[r][c]
                         # Connect only after this enemy ship is sunk.
                         if ship_id in self._player_sunk_ids:
-                            if c < 9 and self.enemy_ship_ids[r][c + 1] == ship_id and view_shots[r][c + 1] == 2:
+                            if c < 9 and self.enemy_ship_ids[r][c + 1] == ship_id:
                                 builder.render_text_dots("1", row=dot_row + 1, col=dot_col + 2)
-                            if r < 9 and self.enemy_ship_ids[r + 1][c] == ship_id and view_shots[r + 1][c] == 2:
+                            if r < 9 and self.enemy_ship_ids[r + 1][c] == ship_id:
                                 builder.render_text_dots("1", row=dot_row + 2, col=dot_col + 1)
 
         # Cursor
         cur_row = top + self.sel_row * step + 2
         cur_col = left + self.sel_col * step
         builder.draw_line(cur_row, cur_col, 2)
+        # Orientation indicator: 3-cell ship graphic on right side, mid-height.
+        if self.phase == "place":
+            ind_row = 20
+            ind_col = 50
+            if self.orientation == "H":
+                for i in range(3):
+                    c = ind_col + i * 3
+                    builder.draw_line(ind_row, c, 2)
+                    builder.draw_line(ind_row + 1, c, 2)
+            else:
+                for i in range(3):
+                    r = ind_row + i * 3
+                    builder.draw_line(r, ind_col, 2)
+                    builder.draw_line(r + 1, ind_col, 2)
         # Extra in-graphics status line at the bottom.
-        msg = self.last_message
+        msg = self.last_message_braille
         if self.phase == "place" and (not msg or msg.startswith("PLACE")):
             current = SHIP_NAMES[min(self.place_index, len(SHIP_NAMES) - 1)]
             msg = f"PLACE {current}"

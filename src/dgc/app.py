@@ -27,7 +27,10 @@ class MainFrame(wx.Frame):
 
     def __init__(self) -> None:
         super().__init__(None, title=APP_TITLE, size=(520, 360))
-        self.pad = dp.DotPad()
+        self.pad = None
+        self._pad_port = "?"
+        self._connect_lock = threading.Lock()
+        self._connect_pad()
         self.speech = SpeechOutput()
 
         self.mode = "menu"
@@ -45,8 +48,10 @@ class MainFrame(wx.Frame):
         self.panel = wx.Panel(self)
         self.panel.SetName(APP_TITLE)
         self.panel.SetLabel(APP_TITLE)
-        self.status_bar = self.CreateStatusBar(1)
-        self.status_bar.SetStatusText("Ready")
+        self.status_bar = self.CreateStatusBar(2)
+        self.status_bar.SetStatusWidths([-1, 280])
+        self.status_bar.SetStatusText("Ready.", 0)
+        self._set_connection_status()
         self.sizer = wx.BoxSizer(wx.VERTICAL)
         self.buttons = []
 
@@ -90,6 +95,9 @@ class MainFrame(wx.Frame):
         self.key_timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self._on_key_timer, self.key_timer)
         self.key_timer.Start(50)
+        self.reconnect_timer = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, self._on_reconnect_timer, self.reconnect_timer)
+        self.reconnect_timer.Start(1000)
 
         self.Bind(wx.EVT_CLOSE, self.on_close)
         self.Bind(wx.EVT_CHAR_HOOK, self._on_char_hook)
@@ -97,20 +105,70 @@ class MainFrame(wx.Frame):
     def on_close(self, event) -> None:
         if hasattr(self, "key_timer") and self.key_timer.IsRunning():
             self.key_timer.Stop()
+        if hasattr(self, "reconnect_timer") and self.reconnect_timer.IsRunning():
+            self.reconnect_timer.Stop()
         self._writer_stop.set()
         self._enqueue_pad_write(None)
         if self._writer_thread.is_alive():
             self._writer_thread.join(timeout=0.5)
         with self._pad_lock:
+            if self.pad is not None:
+                try:
+                    self.pad.clear_all()
+                except Exception:
+                    pass
+                try:
+                    self.pad.close()
+                except Exception:
+                    pass
+                self.pad = None
+        event.Skip()
+
+    def _connect_pad(self) -> bool:
+        """Try to connect DotPad once; return True on success."""
+        if self.pad is not None:
+            return True
+        if not self._connect_lock.acquire(blocking=False):
+            return False
+        try:
             try:
-                self.pad.clear_all()
+                new_pad = dp.DotPad()
+            except Exception:
+                self.pad = None
+                return False
+            self.pad = new_pad
+            self._pad_port = getattr(new_pad, "port", "?")
+            return True
+        finally:
+            self._connect_lock.release()
+
+    def _set_connection_status(self) -> None:
+        """Update right status bar field with DotPad connection state."""
+        if self.pad is None:
+            self.status_bar.SetStatusText("Dot Pad disconnected", 1)
+        else:
+            self.status_bar.SetStatusText(f"Dot Pad connected on {self._pad_port}", 1)
+
+    def _on_reconnect_timer(self, _event) -> None:
+        """Retry DotPad connection once per second when disconnected."""
+        if self.pad is None:
+            self._connect_pad()
+            self._set_connection_status()
+
+    def _mark_pad_disconnected(self) -> None:
+        """Drop current pad handle after I/O failure."""
+        if self.pad is not None:
+            try:
+                self.pad.close()
             except Exception:
                 pass
-            self.pad.close()
-        event.Skip()
+            self.pad = None
+        self._set_connection_status()
 
     def _on_key_timer(self, _event) -> None:
         """Poll pending key notifications without blocking UI."""
+        if self.pad is None:
+            return
         processed = 0
         max_per_tick = 6
         while processed < max_per_tick:
@@ -122,6 +180,9 @@ class MainFrame(wx.Frame):
                 if ser is None or ser.in_waiting <= 0:
                     break
                 pkt = self.pad.read_packet(timeout=0.001)
+            except Exception:
+                self._mark_pad_disconnected()
+                break
             finally:
                 self._pad_lock.release()
             if not pkt or pkt.packet_type is None:
@@ -152,7 +213,10 @@ class MainFrame(wx.Frame):
             if job is None:
                 continue
             with self._pad_lock:
-                job()
+                try:
+                    job()
+                except Exception:
+                    wx.CallAfter(self._mark_pad_disconnected)
 
     def _enqueue_pad_write(self, job) -> None:
         """Queue a DotPad write job, replacing stale pending work."""
@@ -182,7 +246,7 @@ class MainFrame(wx.Frame):
 
     def _set_status(self, text: str) -> None:
         """Update frame status bar text for screen-reader status commands."""
-        self.status_bar.SetStatusText(text)
+        self.status_bar.SetStatusText(text, 0)
 
     def set_menu_index(self, idx: int) -> None:
         if idx == self.menu_index:
@@ -238,7 +302,7 @@ class MainFrame(wx.Frame):
         self.menu_link.Show()
         self._focus_menu_index(self.menu_index)
         self.Layout()
-        self._set_status("Menu")
+        self._set_status("Ready.")
         self.SetTitle(APP_TITLE)
         self.request_menu_render(force=True)
 
@@ -441,6 +505,8 @@ class MainFrame(wx.Frame):
         state = (self.menu_index, self.mode)
         if state == self._last_menu_state:
             return
+        if self.pad is None:
+            return
         builder = self.pad.builder()
         # Header occupies the first 8 dot rows.
         # Keep 3-dot cell spacing so capital prefix has its own cell.
@@ -470,6 +536,8 @@ class MainFrame(wx.Frame):
             rows = builder.rows()
 
             def full_job() -> None:
+                if self.pad is None:
+                    return
                 for i, row_bytes in enumerate(rows, start=1):
                     self.pad.send_display_line(i, row_bytes)
                 send_status(self.pad, "F1/F4 MOVE F2 SELECT")
@@ -481,6 +549,8 @@ class MainFrame(wx.Frame):
             prev_line = self._menu_indicator_line(prev_index)
 
             def partial_job() -> None:
+                if self.pad is None:
+                    return
                 self.pad.send_display_line(cur_line, rows[cur_line - 1])
                 if prev_line != cur_line:
                     self.pad.send_display_line(prev_line, rows[prev_line - 1])
@@ -519,6 +589,7 @@ class MainFrame(wx.Frame):
             state["orientation"] = game.orientation
             state["place_index"] = game.place_index
             state["player_shots"] = [row[:] for row in game.player_shots]
+        state["winner"] = getattr(game, "winner", None)
         return state
 
     def _speak_game_event(self, names: list[str], before: dict[str, object], game: object) -> None:
@@ -577,11 +648,30 @@ class MainFrame(wx.Frame):
                 old_col = int(before.get("sel_col", col - 1)) + 1
                 if row != old_row or col != old_col:
                     square = game._square_name(game.sel_row, game.sel_col)
-                    ship_name = game.ship_name_at(game.sel_row, game.sel_col) if game.phase == "place" else None
-                    if ship_name:
-                        parts.append(f"{square}, {ship_name}")
+                    if game.phase == "place":
+                        ship_name = game.ship_name_at(game.sel_row, game.sel_col)
+                        if ship_name:
+                            parts.append(f"{square}, {ship_name}")
+                        else:
+                            parts.append(square)
                     else:
-                        parts.append(square)
+                        shot = game.player_shots[game.sel_row][game.sel_col]
+                        if shot == 1:
+                            parts.append(f"{square}, miss")
+                        elif shot == 2:
+                            ship_id = game.enemy_ship_ids[game.sel_row][game.sel_col]
+                            if ship_id in game._player_sunk_ids and ship_id > 0:
+                                ship_name = game.ship_name_from_id(ship_id)
+                                if ship_name:
+                                    parts.append(f"{square}, {ship_name}")
+                                else:
+                                    parts.append(f"{square}, hit")
+                            else:
+                                parts.append(f"{square}, hit")
+                        else:
+                            parts.append(square)
+            if "f3" in names and game.phase == "place":
+                parts.append("horizontal" if game.orientation == "H" else "vertical")
             if placed:
                 parts.append(game.last_message)
 
@@ -591,14 +681,47 @@ class MainFrame(wx.Frame):
             if self.speech.enabled:
                 self.speech.speak(msg)
 
+        prev_winner = before.get("winner")
+        now_winner = getattr(game, "winner", None)
+        if prev_winner is None and now_winner is not None:
+            end_msg = self._game_end_message(game)
+            if end_msg:
+                self._set_status(end_msg)
+                if self.speech.enabled:
+                    self.speech.speak(end_msg, interrupt=False)
+
+    @staticmethod
+    def _game_end_message(game: object) -> str:
+        """Return spoken/status game-over message for current game."""
+        if isinstance(game, TicTacToe):
+            if game.winner == "draw":
+                return "Draw. F3 menu."
+            if game.winner == game.player_mark:
+                return "You win. F3 menu."
+            if game.winner == game.ai_mark:
+                return "You lose. F3 menu."
+        elif isinstance(game, Connect4):
+            if game.winner == -1:
+                return "Draw. F3 menu."
+            if game.winner == 1:
+                return "You win. F3 menu."
+            if game.winner == 2:
+                return "You lose. F3 menu."
+        elif isinstance(game, Battleship):
+            if game.winner == "player":
+                return "You win. F3 menu."
+            if game.winner == "cpu":
+                return "You lose. F3 menu."
+        return ""
+
     def render_game(self) -> None:
-        if not self.current_game or self.mode != "game":
+        if not self.current_game or self.mode != "game" or self.pad is None:
             return
         game = self.current_game
 
         def game_job() -> None:
             # Skip stale jobs queued before mode/game changed.
-            if self.mode != "game" or self.current_game is not game:
+            if self.mode != "game" or self.current_game is not game or self.pad is None:
                 return
             game.render(self.pad)
 
