@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Dot Game Center (wxPython + DotPad)"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Proprietary" }
+license = { text = "MIT" }
 dependencies = [
     "accessible-output2>=0.17",
     "wxPython>=4.2",
