@@ -40,6 +40,7 @@ class Battleship:
         self._last_rows: list[bytes] | None = None
         self._place_enemy_ships()
         self._target_queue: list[tuple[int, int]] = []
+        self._target_set: set[tuple[int, int]] = set()
         self._player_sunk_ids: set[int] = set()
         self._cpu_sunk_ids: set[int] = set()
 
@@ -131,15 +132,15 @@ class Battleship:
         self.enemy_shots[r][c] = 2 if hit else 1
         sunk_name: str | None = None
         if hit:
-            for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                rr, cc = r + dr, c + dc
-                if 0 <= rr < 10 and 0 <= cc < 10 and self.enemy_shots[rr][cc] == 0:
-                    self._target_queue.append((rr, cc))
             ship_id = self.player_ship_ids[r][c]
+            self._enqueue_from_hit_cluster(r, c)
             if ship_id > 0 and self._is_ship_sunk(self.player_ship_ids, self.enemy_shots, ship_id):
                 if ship_id not in self._cpu_sunk_ids:
                     self._cpu_sunk_ids.add(ship_id)
                     sunk_name = SHIP_NAMES[ship_id - 1]
+                # Reset targeting after a sink so we return to hunt mode cleanly.
+                self._target_queue.clear()
+                self._target_set.clear()
         if self._all_sunk(self.player_board, self.enemy_shots):
             self.winner = "cpu"
         return hit, self._square_name(r, c), sunk_name
@@ -159,10 +160,73 @@ class Battleship:
     def _enemy_pick(self) -> tuple[int, int]:
         while self._target_queue:
             r, c = self._target_queue.pop(0)
+            self._target_set.discard((r, c))
             if self.enemy_shots[r][c] == 0:
                 return r, c
+        # Hunt on parity squares first for better ship coverage.
+        parity = [(r, c) for r in range(10) for c in range(10) if self.enemy_shots[r][c] == 0 and (r + c) % 2 == 0]
+        if parity:
+            return random.choice(parity)
         options = [(r, c) for r in range(10) for c in range(10) if self.enemy_shots[r][c] == 0]
         return random.choice(options)
+
+    def _enqueue_target(self, r: int, c: int) -> None:
+        if not (0 <= r < 10 and 0 <= c < 10):
+            return
+        if self.enemy_shots[r][c] != 0:
+            return
+        key = (r, c)
+        if key in self._target_set:
+            return
+        self._target_set.add(key)
+        self._target_queue.append(key)
+
+    def _enqueue_from_hit_cluster(self, r: int, c: int) -> None:
+        """Prioritize shots extending known hit lines before neighbor probes."""
+        cluster = self._connected_hits(r, c)
+        if len(cluster) >= 2:
+            rows = {rr for rr, _ in cluster}
+            cols = {cc for _, cc in cluster}
+            if len(rows) == 1:
+                row = next(iter(rows))
+                min_c = min(cc for _, cc in cluster)
+                max_c = max(cc for _, cc in cluster)
+                self._enqueue_target(row, min_c - 1)
+                self._enqueue_target(row, max_c + 1)
+                return
+            if len(cols) == 1:
+                col = next(iter(cols))
+                min_r = min(rr for rr, _ in cluster)
+                max_r = max(rr for rr, _ in cluster)
+                self._enqueue_target(min_r - 1, col)
+                self._enqueue_target(max_r + 1, col)
+                return
+
+        for rr, cc in cluster:
+            for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                self._enqueue_target(rr + dr, cc + dc)
+
+    def _connected_hits(self, r: int, c: int) -> list[tuple[int, int]]:
+        """Return orthogonally connected enemy hit cells around (r, c)."""
+        if not (0 <= r < 10 and 0 <= c < 10):
+            return []
+        if self.enemy_shots[r][c] != 2:
+            return []
+        out: list[tuple[int, int]] = []
+        stack = [(r, c)]
+        seen = set(stack)
+        while stack:
+            rr, cc = stack.pop()
+            out.append((rr, cc))
+            for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nr, nc = rr + dr, cc + dc
+                key = (nr, nc)
+                if key in seen:
+                    continue
+                if 0 <= nr < 10 and 0 <= nc < 10 and self.enemy_shots[nr][nc] == 2:
+                    seen.add(key)
+                    stack.append(key)
+        return out
 
     def _all_sunk(self, ships: list[list[int]], shots: list[list[int]]) -> bool:
         for r in range(10):
@@ -315,6 +379,14 @@ class Battleship:
         cur_row = top + self.sel_row * step + 2
         cur_col = left + self.sel_col * step
         builder.draw_line(cur_row, cur_col, 2)
+        # Current square in bottom-right corner of graphics area.
+        builder.render_text(
+            self._square_name(self.sel_row, self.sel_col),
+            row=38,
+            col=56,
+            use_number_sign=False,
+            use_nemeth=True,
+        )
         # Orientation indicator: 3-cell ship graphic on right side, mid-height.
         if self.phase == "place":
             ind_row = 20
