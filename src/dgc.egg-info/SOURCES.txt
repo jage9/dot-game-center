@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/dgc/__init__.py
+src/dgc/app.py
+src/dgc/speech.py
+src/dgc.egg-info/PKG-INFO
+src/dgc.egg-info/SOURCES.txt
+src/dgc.egg-info/dependency_links.txt
+src/dgc.egg-info/entry_points.txt
+src/dgc.egg-info/requires.txt
+src/dgc.egg-info/top_level.txt
+src/dgc/games/__init__.py
+src/dgc/games/battleship.py
+src/dgc/games/connect4.py
+src/dgc/games/tictactoe.py
+src/dgc/games/utils.py

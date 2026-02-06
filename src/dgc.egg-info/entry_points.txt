@@ -1,0 +1,2 @@
+[console_scripts]
+dgc = dgc.app:main
