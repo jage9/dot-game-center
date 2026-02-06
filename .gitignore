@@ -1,0 +1,17 @@
+# Environments
+.venv/
+venv/
+
+# Python caches/bytecode
+__pycache__/
+*.py[cod]
+
+# Packaging/build outputs
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+
+# Local notes
+summary.md
+

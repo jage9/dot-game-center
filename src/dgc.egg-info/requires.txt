@@ -1,2 +1,0 @@
-accessible-output2>=0.17
-wxPython>=4.2
