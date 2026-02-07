@@ -9,6 +9,7 @@ __pycache__/
 # Packaging/build outputs
 build/
 dist/
+*.spec
 *.egg-info/
 .pytest_cache/
 uv.lock
