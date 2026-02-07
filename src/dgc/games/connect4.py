@@ -42,8 +42,13 @@ class Connect4:
         if "f2" in names:
             if self._drop(self.sel_col, 1):
                 self._check_winner()
-                if not self.winner:
-                    self._ai_move()
+
+    def run_ai_turn(self) -> bool:
+        """Run one AI turn if game is still active."""
+        if self.winner is not None:
+            return False
+        self._ai_move()
+        return True
 
     def _drop(self, col: int, player: int) -> bool:
         for r in reversed(range(self.rows)):

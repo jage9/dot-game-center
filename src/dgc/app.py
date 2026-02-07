@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import queue
+import random
 import threading
 import wx
 import wx.adv
@@ -13,6 +14,7 @@ from dotpad.serial_driver import PacketType
 
 from .games import TicTacToe, Connect4, Battleship
 from .games.utils import send_status
+from .sound import SoundManager
 from .speech import SpeechOutput
 
 
@@ -32,10 +34,13 @@ class MainFrame(wx.Frame):
         self._connect_lock = threading.Lock()
         self._connect_pad()
         self.speech = SpeechOutput()
+        self.sound = SoundManager()
 
         self.mode = "menu"
         self.menu_index = 0
         self.current_game = None
+        self._cpu_pending = False
+        self._cpu_timer: wx.CallLater | None = None
         self._menu_render_pending = False
         self._menu_force_pending = False
         self._last_menu_state: tuple[int, str] | None = None
@@ -111,6 +116,8 @@ class MainFrame(wx.Frame):
         self._enqueue_pad_write(None)
         if self._writer_thread.is_alive():
             self._writer_thread.join(timeout=0.5)
+        if self._cpu_timer is not None and self._cpu_timer.IsRunning():
+            self._cpu_timer.Stop()
         with self._pad_lock:
             if self.pad is not None:
                 try:
@@ -259,10 +266,13 @@ class MainFrame(wx.Frame):
         if idx == len(MENU_ITEMS):
             wx.LaunchDefaultBrowser(MENU_LINK_URL)
             self._set_status("Visit atguys.com")
+            self.sound.play("select")
             return
         if idx == len(MENU_ITEMS) - 1:
+            self.sound.play("select")
             self.Close()
             return
+        self.sound.play("select")
         self.start_game(idx)
 
     def start_game(self, idx: int) -> None:
@@ -273,6 +283,7 @@ class MainFrame(wx.Frame):
         else:
             game = Battleship()
         self.current_game = game
+        self._cpu_pending = False
         self.mode = "game"
         self._last_menu_state = None
         game_name = MENU_ITEMS[idx]
@@ -292,6 +303,9 @@ class MainFrame(wx.Frame):
         self.SetFocus()
 
     def back_to_menu(self) -> None:
+        self._cpu_pending = False
+        if self._cpu_timer is not None and self._cpu_timer.IsRunning():
+            self._cpu_timer.Stop()
         self.mode = "menu"
         self.current_game = None
         self.game_panel.Hide()
@@ -323,6 +337,9 @@ class MainFrame(wx.Frame):
         builder.draw_rectangle(row, col, row + 2, col + 2)
 
     def on_pad_keys(self, names: list[str]) -> None:
+        if self.mode == "game" and self._cpu_pending:
+            return
+
         # Global menu chord
         if "f1" in names and "f4" in names:
             self.back_to_menu()
@@ -355,8 +372,11 @@ class MainFrame(wx.Frame):
                 before = self._capture_game_state(self.current_game)
                 self.current_game.handle_key(names)
                 self._speak_game_event(names, before, self.current_game)
+                self._play_human_sound(names, before, self.current_game)
                 self._update_game_grid()
                 self.render_game()
+                if self._should_schedule_cpu_turn(names, before, self.current_game):
+                    self._schedule_cpu_turn()
 
     def _on_char_hook(self, event: wx.KeyEvent) -> None:
         """Handle keyboard shortcuts for game navigation."""
@@ -367,6 +387,8 @@ class MainFrame(wx.Frame):
                 return
             if code == wx.WXK_ESCAPE:
                 self.back_to_menu()
+                return
+            if self._cpu_pending:
                 return
             if code == wx.WXK_F3 and self._game_over():
                 self.back_to_menu()
@@ -592,6 +614,115 @@ class MainFrame(wx.Frame):
         state["winner"] = getattr(game, "winner", None)
         return state
 
+    @staticmethod
+    def _count_token(board: list[list[object]], value: object) -> int:
+        return sum(1 for row in board for cell in row if cell == value)
+
+    @staticmethod
+    def _count_marked(board: list[list[int]]) -> int:
+        return sum(1 for row in board for cell in row if cell != 0)
+
+    def _should_schedule_cpu_turn(self, names: list[str], before: dict[str, object], game: object) -> bool:
+        """Return True if this input created a valid human move and CPU should play."""
+        if "f2" not in names or getattr(game, "winner", None) is not None:
+            return False
+        if isinstance(game, TicTacToe):
+            prev = before.get("board")
+            if not isinstance(prev, list):
+                return False
+            p_before = self._count_token(prev, game.player_mark)
+            o_before = self._count_token(prev, game.ai_mark)
+            p_now = self._count_token(game.board, game.player_mark)
+            o_now = self._count_token(game.board, game.ai_mark)
+            return p_now > p_before and o_now == o_before
+        if isinstance(game, Connect4):
+            prev = before.get("board")
+            if not isinstance(prev, list):
+                return False
+            p_before = self._count_token(prev, 1)
+            c_before = self._count_token(prev, 2)
+            p_now = self._count_token(game.board, 1)
+            c_now = self._count_token(game.board, 2)
+            return p_now > p_before and c_now == c_before
+        if isinstance(game, Battleship):
+            if before.get("phase") != "attack" or game.phase != "attack":
+                return False
+            prev = before.get("player_shots")
+            if not isinstance(prev, list):
+                return False
+            return self._count_marked(game.player_shots) > self._count_marked(prev)
+        return False
+
+    def _schedule_cpu_turn(self) -> None:
+        """Schedule CPU move 1.5-2.0 seconds after player action."""
+        self._cpu_pending = True
+        if self._cpu_timer is not None and self._cpu_timer.IsRunning():
+            self._cpu_timer.Stop()
+        delay_ms = random.randint(1500, 2000)
+        self._cpu_timer = wx.CallLater(delay_ms, self._run_cpu_turn)
+
+    def _run_cpu_turn(self) -> None:
+        """Execute delayed CPU turn and refresh game/speech."""
+        self._cpu_pending = False
+        if self.mode != "game" or not self.current_game or self._game_over():
+            return
+        before = self._capture_game_state(self.current_game)
+        did_move = False
+        if isinstance(self.current_game, TicTacToe):
+            did_move = self.current_game.run_ai_turn()
+        elif isinstance(self.current_game, Connect4):
+            did_move = self.current_game.run_ai_turn()
+        elif isinstance(self.current_game, Battleship):
+            did_move = self.current_game.run_cpu_turn()
+        if not did_move:
+            return
+        self.sound.play("move2")
+        self._speak_cpu_event(before, self.current_game)
+        self._update_game_grid()
+        self.render_game()
+
+    def _speak_cpu_event(self, before: dict[str, object], game: object) -> None:
+        """Speak/announce CPU turn updates."""
+        msg = ""
+        if isinstance(game, TicTacToe):
+            prev = before.get("board")
+            if isinstance(prev, list):
+                for rr in range(3):
+                    for cc in range(3):
+                        if prev[rr][cc] == "" and game.board[rr][cc] == game.ai_mark:
+                            msg = f"Computer places {game.ai_mark} at {chr(ord('A') + rr)}{cc + 1}"
+                            break
+                    if msg:
+                        break
+        elif isinstance(game, Connect4):
+            prev = before.get("board")
+            if isinstance(prev, list):
+                for rr in range(game.rows):
+                    for cc in range(game.cols):
+                        if prev[rr][cc] == 0 and game.board[rr][cc] == 2:
+                            msg = f"circle dropped in col {cc + 1}"
+                            break
+                    if msg:
+                        break
+        elif isinstance(game, Battleship):
+            msg = game.last_message
+
+        if msg:
+            self._set_status(msg)
+            if self.speech.enabled:
+                self.speech.speak(msg)
+
+        if getattr(game, "winner", None) is not None:
+            end_msg = self._game_end_message(game)
+            if end_msg:
+                self._set_status(end_msg)
+                if self.speech.enabled:
+                    self.speech.speak(end_msg, interrupt=False)
+                if "YOU WIN" in end_msg.upper():
+                    self.sound.play("win")
+                elif "YOU LOSE" in end_msg.upper():
+                    self.sound.play("lose")
+
     def _speak_game_event(self, names: list[str], before: dict[str, object], game: object) -> None:
         """Speak movement and placement updates as one combined message."""
         parts: list[str] = []
@@ -689,6 +820,35 @@ class MainFrame(wx.Frame):
                 self._set_status(end_msg)
                 if self.speech.enabled:
                     self.speech.speak(end_msg, interrupt=False)
+                if "YOU WIN" in end_msg.upper():
+                    self.sound.play("win")
+                elif "YOU LOSE" in end_msg.upper():
+                    self.sound.play("lose")
+
+    def _play_human_sound(self, names: list[str], before: dict[str, object], game: object) -> None:
+        """Play player action sounds."""
+        if "f2" not in names:
+            return
+        if isinstance(game, Battleship) and before.get("phase") == "place":
+            if before.get("place_index") != game.place_index:
+                self.sound.play("place")
+            return
+        if isinstance(game, Battleship) and before.get("phase") == "attack":
+            prev = before.get("player_shots")
+            if isinstance(prev, list) and self._count_marked(game.player_shots) > self._count_marked(prev):
+                self.sound.play("move1")
+            return
+        if isinstance(game, TicTacToe):
+            prev = before.get("board")
+            if isinstance(prev, list):
+                if self._count_token(game.board, game.player_mark) > self._count_token(prev, game.player_mark):
+                    self.sound.play("move1")
+            return
+        if isinstance(game, Connect4):
+            prev = before.get("board")
+            if isinstance(prev, list):
+                if self._count_token(game.board, 1) > self._count_token(prev, 1):
+                    self.sound.play("move1")
 
     @staticmethod
     def _game_end_message(game: object) -> str:

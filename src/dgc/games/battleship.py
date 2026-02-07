@@ -115,16 +115,34 @@ class Battleship:
             self.last_message = f"{user_part}, you win"
             self.last_message_braille = f"{user_part_braille} y win"
             return
+        tail = f", {', '.join(sunk_parts)}" if sunk_parts else ""
+        self.last_message = f"{user_part}{tail}"
+        tail_braille = f" {' '.join(sunk_parts_braille)}" if sunk_parts_braille else ""
+        self.last_message_braille = f"{user_part_braille}{tail_braille}"
+
+    def run_cpu_turn(self) -> bool:
+        """Run one CPU turn after player fires."""
+        if self.winner is not None or self.phase != "attack":
+            return False
         cpu_hit, cpu_square, cpu_sunk_name = self._enemy_turn()
         cpu_part = f"I hit {cpu_square}" if cpu_hit else f"I miss {cpu_square}"
+        sunk_parts: list[str] = []
+        sunk_parts_braille: list[str] = []
         if cpu_sunk_name:
             sunk = f"I sunk {cpu_sunk_name.lower()}"
             sunk_parts.append(sunk)
             sunk_parts_braille.append(sunk)
+
+        if self.winner == "cpu":
+            self.last_message = f"{cpu_part}, you lose"
+            self.last_message_braille = f"{cpu_part} y lose"
+            return True
+
         tail = f", {', '.join(sunk_parts)}" if sunk_parts else ""
-        self.last_message = f"{user_part}, {cpu_part}{tail}"
+        self.last_message = f"{cpu_part}{tail}"
         tail_braille = f" {' '.join(sunk_parts_braille)}" if sunk_parts_braille else ""
-        self.last_message_braille = f"{user_part_braille} {cpu_part}{tail_braille}"
+        self.last_message_braille = f"{cpu_part}{tail_braille}"
+        return True
 
     def _enemy_turn(self) -> tuple[bool, str, str | None]:
         r, c = self._enemy_pick()

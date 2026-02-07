@@ -7,6 +7,7 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
     "accessible-output2>=0.17",
+    "miniaudio>=1.61",
     "wxPython>=4.2",
 ]
 
