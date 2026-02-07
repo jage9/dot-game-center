@@ -1,5 +1,10 @@
 # Dot Game Center (DGC)
 
+## What it Is
+Some games benefit from being able to ffeel the tactile or braille board while playing. While these games are perfectly playable with speech, having a dedicated graphical view of the board makes them easier to understand and provides multimodal output.
+These games are designed to work with the Dot Pad X multiline braille display and graphics tablet, though are playable with speech alone if desired.
+
+## How it Works
 Dot Game Center is a Windows-first game app built with wxPython and DotPad.
 It uses a  DotPad Python wheel and its `DotPad` class as the hardware layer.
 That class handles both output areas on the device:
@@ -26,7 +31,7 @@ dgc.bat
 ## Controls
 Games can be controled both through the Dot Pad as well as the computer.
 
-## Menu Controls
+## Main Menu
 - `F1/F4` move to previous or next menu item
 - `F2` select menu item
 
@@ -36,12 +41,9 @@ Games can be controled both through the Dot Pad as well as the computer.
 - Battleship
 
 ## In-Game Controls
-- DotPad: `panLeft/panRight` move to previous or next column, `F1/F4` move to previous or next row, `F2` action
-- Keyboard: arrow keys move, `Enter/Space` action, `Esc` back to menu
-- On game over: `F3` returns to menu
-
-## Notes
-- Windows status bar shows last action for screen reader status commands.
+- DotPad: `panLeft/panRight` move to previous or next column, `F1/F4` move to previous or next row, `F2` perform action
+- Keyboard: arrow keys move, `Enter/Space` action, `Escape` back to menu
+- On game over: `F3` or `Escape` returns to menu
 
 ## Contributing
 Contributions are welcome. Please create an issue with bugs/feature ideas or submit a PR for consideration.
