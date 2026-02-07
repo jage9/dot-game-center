@@ -622,6 +622,15 @@ class MainFrame(wx.Frame):
     def _count_marked(board: list[list[int]]) -> int:
         return sum(1 for row in board for cell in row if cell != 0)
 
+    @staticmethod
+    def _new_shot_coord(before: list[list[int]], after: list[list[int]]) -> tuple[int, int, int] | None:
+        """Return (row, col, shot_value) for newly marked shot cell."""
+        for r in range(len(after)):
+            for c in range(len(after[r])):
+                if before[r][c] == 0 and after[r][c] != 0:
+                    return r, c, after[r][c]
+        return None
+
     def _should_schedule_cpu_turn(self, names: list[str], before: dict[str, object], game: object) -> bool:
         """Return True if this input created a valid human move and CPU should play."""
         if "f2" not in names or getattr(game, "winner", None) is not None:
@@ -668,15 +677,25 @@ class MainFrame(wx.Frame):
             return
         before = self._capture_game_state(self.current_game)
         did_move = False
+        cpu_hit = False
         if isinstance(self.current_game, TicTacToe):
             did_move = self.current_game.run_ai_turn()
         elif isinstance(self.current_game, Connect4):
             did_move = self.current_game.run_ai_turn()
         elif isinstance(self.current_game, Battleship):
+            before_enemy = [row[:] for row in self.current_game.enemy_shots]
             did_move = self.current_game.run_cpu_turn()
+            if did_move:
+                shot = self._new_shot_coord(before_enemy, self.current_game.enemy_shots)
+                cpu_hit = bool(shot and shot[2] == 2)
         if not did_move:
             return
-        self.sound.play("move2")
+        if isinstance(self.current_game, Battleship):
+            self.sound.play("fire")
+            if cpu_hit:
+                wx.CallLater(500, lambda: self.sound.play("hit"))
+        else:
+            self.sound.play("move2")
         self._speak_cpu_event(before, self.current_game)
         self._update_game_grid()
         self.render_game()
@@ -835,8 +854,12 @@ class MainFrame(wx.Frame):
             return
         if isinstance(game, Battleship) and before.get("phase") == "attack":
             prev = before.get("player_shots")
-            if isinstance(prev, list) and self._count_marked(game.player_shots) > self._count_marked(prev):
-                self.sound.play("move1")
+            if isinstance(prev, list):
+                shot = self._new_shot_coord(prev, game.player_shots)
+                if shot is not None:
+                    self.sound.play("fire")
+                    if shot[2] == 2:
+                        wx.CallLater(500, lambda: self.sound.play("hit"))
             return
         if isinstance(game, TicTacToe):
             prev = before.get("board")

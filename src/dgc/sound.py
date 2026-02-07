@@ -24,6 +24,8 @@ class SoundManager:
             "lose": self._base / "lose.ogg",
             "move1": self._base / "move1.ogg",
             "move2": self._base / "move2.ogg",
+            "fire": self._base / "fire.ogg",
+            "hit": self._base / "hit.ogg",
             "place": self._base / "place.ogg",
             "select": self._base / "select.ogg",
         }
