@@ -8,15 +8,13 @@ That class handles both output areas on the device:
 
 DGC sits above that wrapper and focuses on gameplay, navigation, and accessibility.
 
-## Setup
+## Setup from Source
 From `dgc/`:
 ```
 .\setup.ps1
 ```
 - `setup.ps1` runs `uv sync` and installs the newest `dotpad-*.whl` from `vendor/dotpad/`.
 - `uv` is required.
-
-## Run
 ```
 uv run dgc
 ```
