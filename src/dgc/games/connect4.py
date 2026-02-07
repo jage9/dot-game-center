@@ -256,10 +256,11 @@ class Connect4:
                 else:
                     self._draw_circle(builder, base_row, base_col)
 
-        # Caret indicator at bottom.
-        cursor_row = top + self.rows * cell_h + 2
-        cursor_col = left + self.sel_col * cell_w + 2
-        builder.draw_line(cursor_row, cursor_col, 5)
+        # Caret indicator at bottom while game is active.
+        if self.winner is None:
+            cursor_row = top + self.rows * cell_h + 2
+            cursor_col = left + self.sel_col * cell_w + 2
+            builder.draw_line(cursor_row, cursor_col, 5)
 
         rows = builder.rows()
         if self._last_rows is None:

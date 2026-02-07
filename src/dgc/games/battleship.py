@@ -396,10 +396,11 @@ class Battleship:
                             if r < 9 and self.enemy_ship_ids[r + 1][c] == ship_id:
                                 builder.render_text_dots("1", row=dot_row + 2, col=dot_col + 1)
 
-        # Cursor
-        cur_row = top + self.sel_row * step + 2
-        cur_col = left + self.sel_col * step
-        builder.draw_line(cur_row, cur_col, 2)
+        # Cursor while game is active.
+        if self.winner is None:
+            cur_row = top + self.sel_row * step + 2
+            cur_col = left + self.sel_col * step
+            builder.draw_line(cur_row, cur_col, 2)
         # Current square in bottom-right corner of graphics area.
         builder.render_text(
             self._square_name(self.sel_row, self.sel_col),

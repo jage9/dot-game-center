@@ -14,7 +14,7 @@ if (-not $wheel) {
 
 Write-Host "Using DotPad wheel: $($wheel.Name)"
 
-uv sync
+uv sync --no-group build
 uv pip install --force-reinstall $wheel.FullName
 
 Write-Host ""

@@ -5,6 +5,7 @@ from __future__ import annotations
 import queue
 import random
 import threading
+from importlib.metadata import PackageNotFoundError, version as package_version
 import wx
 import wx.adv
 import wx.grid as gridlib
@@ -18,10 +19,12 @@ from .sound import SoundManager
 from .speech import SpeechOutput
 
 
-MENU_ITEMS = ["Tic Tac Toe", "Connect 4", "Battleship", "Exit"]
+GAME_ITEMS = ["Tic Tac Toe", "Connect 4", "Battleship"]
+MENU_ITEMS = [*GAME_ITEMS, "About", "Exit"]
 APP_TITLE = "Dot Game Center"
 MENU_LINK_LABEL = "visit atguys.com"
 MENU_LINK_URL = "https://www.atguys.com"
+APP_GITHUB_URL = "https://github.com/jage9/dot-game-center"
 
 
 class MainFrame(wx.Frame):
@@ -29,6 +32,7 @@ class MainFrame(wx.Frame):
 
     def __init__(self) -> None:
         super().__init__(None, title=APP_TITLE, size=(520, 360))
+        self.app_version = self._resolve_app_version()
         self.pad = None
         self._pad_port = "?"
         self._connect_lock = threading.Lock()
@@ -39,6 +43,7 @@ class MainFrame(wx.Frame):
         self.mode = "menu"
         self.menu_index = 0
         self.current_game = None
+        self.about_dialog: wx.Dialog | None = None
         self._cpu_pending = False
         self._cpu_timer: wx.CallLater | None = None
         self._menu_render_pending = False
@@ -268,7 +273,11 @@ class MainFrame(wx.Frame):
             self._set_status("Visit atguys.com")
             self.sound.play("select")
             return
-        if idx == len(MENU_ITEMS) - 1:
+        if MENU_ITEMS[idx] == "About":
+            self.sound.play("select")
+            self.show_about_dialog()
+            return
+        if MENU_ITEMS[idx] == "Exit":
             self.sound.play("select")
             self.Close()
             return
@@ -276,6 +285,8 @@ class MainFrame(wx.Frame):
         self.start_game(idx)
 
     def start_game(self, idx: int) -> None:
+        if MENU_ITEMS[idx] not in GAME_ITEMS:
+            return
         if idx == 0:
             game = TicTacToe()
         elif idx == 1:
@@ -324,6 +335,107 @@ class MainFrame(wx.Frame):
         self.SetTitle(APP_TITLE)
         self.request_menu_render(force=True)
 
+    @staticmethod
+    def _resolve_app_version() -> str:
+        """Resolve packaged app version string."""
+        try:
+            return package_version("dgc")
+        except PackageNotFoundError:
+            return "0.1"
+
+    def show_about_dialog(self) -> None:
+        """Show app About dialog."""
+        self._render_about_dotpad()
+        prev_mode = self.mode
+        self.mode = "about"
+        dlg = wx.Dialog(self, title=f"About {APP_TITLE}", size=(560, 360))
+        self.about_dialog = dlg
+        panel = wx.Panel(dlg)
+        sizer = wx.BoxSizer(wx.VERTICAL)
+
+        about_text = (
+            f"{APP_TITLE}\n"
+            f"Version {self.app_version}\n"
+            f"Designed for the Dot Pad X braille & graphics tablet\n\n"
+            f"By J.J. Meddaugh\n"
+            f"jj@atguys.com\n"
+            f"This project is licensed under the MIT License. See LICENSE.\n"
+        )
+        text = wx.TextCtrl(
+            panel,
+            value=about_text,
+            style=wx.TE_MULTILINE | wx.TE_READONLY | wx.BORDER_SIMPLE,
+        )
+        text.SetName("About details")
+        sizer.Add(text, 1, wx.ALL | wx.EXPAND, 8)
+
+        link = wx.adv.HyperlinkCtrl(panel, id=wx.ID_ANY, label="Visit GitHub", url=APP_GITHUB_URL)
+        link.Hide()
+        sizer.Add(link, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+
+        close_btn = wx.Button(panel, wx.ID_OK, "Close")
+        sizer.Add(close_btn, 0, wx.ALL | wx.ALIGN_RIGHT, 8)
+
+        panel.SetSizer(sizer)
+        dlg.SetEscapeId(wx.ID_OK)
+        wx.CallAfter(lambda: (text.SetFocus(), text.SetSelection(-1, -1)))
+        wx.CallLater(250, link.Show)
+        dlg.ShowModal()
+        dlg.Destroy()
+        self.about_dialog = None
+        self.mode = prev_mode
+        self.request_menu_render(force=True)
+
+    def _render_about_dotpad(self) -> None:
+        """Render a read-only About summary on DotPad graphics/text areas."""
+        if self.pad is None:
+            return
+
+        def about_job() -> None:
+            if self.pad is None:
+                return
+            builder = self.pad.builder()
+
+            def render_caps_words(row: int, col: int, words: list[str], double_caps_words: set[str] | None = None) -> None:
+                """Render words with explicit capital indicators (dot 6)."""
+                caps2 = double_caps_words or set()
+                cur = col
+                for word in words:
+                    markers = "6 6" if word in caps2 else "6"
+                    marker_cells = 2 if word in caps2 else 1
+                    builder.render_text_dots(markers, row=row, col=cur)
+                    builder.render_text(word.lower(), row=row, col=cur + (marker_cells * 3), use_number_sign=False)
+                    cur += (marker_cells + len(word) + 1) * 3
+
+            render_caps_words(1, 1, ["DOT", "GAME", "CENTER"])
+            builder.render_text_dots("6", row=5, col=1)
+            builder.render_text(f"version {self.app_version}", row=5, col=4, use_number_sign=True, use_nemeth=False)
+            # BY J.J. MEDDAUGH with explicit capitals for BY, J, J, MEDDAUGH.
+            builder.render_text_dots("6", row=13, col=1)
+            builder.render_text("by", row=13, col=4, use_number_sign=False)
+            builder.render_text_dots("6", row=13, col=13)
+            builder.render_text("j", row=13, col=16, use_number_sign=False)
+            builder.render_text(".", row=13, col=19, use_number_sign=False)
+            builder.render_text_dots("6", row=13, col=22)
+            builder.render_text("j", row=13, col=25, use_number_sign=False)
+            builder.render_text(".", row=13, col=28, use_number_sign=False)
+            builder.render_text_dots("6", row=13, col=34)
+            builder.render_text("meddaugh", row=13, col=37, use_number_sign=False)
+            builder.render_text("jj@atguys.com", row=17, col=1)
+            builder.render_text_dots("6 6", row=21, col=1)
+            builder.render_text("mit", row=21, col=7, use_number_sign=False)
+            builder.render_text_dots("6", row=21, col=19)
+            builder.render_text("license", row=21, col=22, use_number_sign=False)
+            # Leave one blank line before GitHub URL.
+            builder.render_text("github.com/jage9/", row=29, col=1)
+            builder.render_text("dot-game-center", row=33, col=1)
+            rows = builder.rows()
+            for i, row_bytes in enumerate(rows, start=1):
+                self.pad.send_display_line(i, row_bytes)
+            send_status(self.pad, "F2 CLOSE ABOUT")
+
+        self._enqueue_pad_write(about_job)
+
     def request_menu_render(self, force: bool = False) -> None:
         """Coalesce menu renders to avoid flooding serial writes."""
         if self.mode != "menu":
@@ -341,6 +453,14 @@ class MainFrame(wx.Frame):
         builder.draw_rectangle(row, col, row + 2, col + 2)
 
     def on_pad_keys(self, names: list[str]) -> None:
+        if self.mode == "about":
+            if "f2" in names and self.about_dialog is not None:
+                try:
+                    self.about_dialog.EndModal(wx.ID_OK)
+                except Exception:
+                    pass
+            return
+
         if self.mode == "game" and self._cpu_pending:
             return
 

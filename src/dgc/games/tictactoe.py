@@ -180,10 +180,11 @@ class TicTacToe:
                 else:
                     self._draw_o(builder, mark_row, mark_col, mark_size)
 
-        # Focus indicator (short line below selected cell)
-        focus_row = top + (self.sel_row + 1) * cell_h - 1
-        focus_col = left + self.sel_col * cell_w + 6
-        builder.draw_line(focus_row, focus_col, 6)
+        # Focus indicator (short line below selected cell) while game is active.
+        if self.winner is None:
+            focus_row = top + (self.sel_row + 1) * cell_h - 1
+            focus_col = left + self.sel_col * cell_w + 6
+            builder.draw_line(focus_row, focus_col, 6)
 
         rows = builder.rows()
         if self._last_rows is None:

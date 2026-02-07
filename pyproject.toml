@@ -1,6 +1,6 @@
 [project]
 name = "dgc"
-version = "0.1.0"
+version = "0.1"
 description = "Dot Game Center (wxPython + DotPad)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,6 +13,14 @@ dependencies = [
 
 [project.scripts]
 dgc = "dgc.app:main"
+
+[dependency-groups]
+build = [
+    "pyinstaller>=6.0",
+]
+
+[tool.uv]
+default-groups = []
 
 [build-system]
 requires = ["setuptools>=61.0"]
