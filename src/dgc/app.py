@@ -299,6 +299,10 @@ class MainFrame(wx.Frame):
         self.SetTitle(f"{APP_TITLE} - {game_name}")
         self.Layout()
         self.render_game()
+        if isinstance(game, Battleship):
+            self._set_status("Place your ships.")
+            if self.speech.enabled:
+                self.speech.speak("Place your ships.")
         # Keep focus on the frame to avoid announcing the generic panel object.
         self.SetFocus()
 
@@ -678,6 +682,7 @@ class MainFrame(wx.Frame):
         before = self._capture_game_state(self.current_game)
         did_move = False
         cpu_hit = False
+        cpu_square = ""
         if isinstance(self.current_game, TicTacToe):
             did_move = self.current_game.run_ai_turn()
         elif isinstance(self.current_game, Connect4):
@@ -687,16 +692,22 @@ class MainFrame(wx.Frame):
             did_move = self.current_game.run_cpu_turn()
             if did_move:
                 shot = self._new_shot_coord(before_enemy, self.current_game.enemy_shots)
-                cpu_hit = bool(shot and shot[2] == 2)
+                if shot:
+                    cpu_hit = shot[2] == 2
+                    cpu_square = self.current_game._square_name(shot[0], shot[1])
         if not did_move:
             return
         if isinstance(self.current_game, Battleship):
+            game_ref = self.current_game
+            if cpu_square and self.speech.enabled:
+                self.speech.speak(f"I shoot {cpu_square}")
             self.sound.play("fire")
             if cpu_hit:
                 wx.CallLater(500, lambda: self.sound.play("hit"))
+            wx.CallLater(500, lambda: self._announce_battleship_cpu_shot(game_ref, cpu_square, cpu_hit))
         else:
             self.sound.play("move2")
-        self._speak_cpu_event(before, self.current_game)
+            self._speak_cpu_event(before, self.current_game)
         self._update_game_grid()
         self.render_game()
 
@@ -741,6 +752,58 @@ class MainFrame(wx.Frame):
                     self.sound.play("win")
                 elif "YOU LOSE" in end_msg.upper():
                     self.sound.play("lose")
+                elif "DRAW" in end_msg.upper():
+                    self.sound.play("tie")
+
+    def _announce_battleship_user_shot(self, game: Battleship, square: str, hit: bool) -> None:
+        """Speak/status player Battleship shot timed to SFX."""
+        outcome = "hit" if hit else "miss"
+        msg = f"{square}, {outcome}"
+        game.last_message = msg
+        game.last_message_braille = f"y {outcome} {square.lower()}"
+        self._set_status(msg)
+        if self.speech.enabled:
+            self.speech.speak(outcome)
+            if game.pending_user_sunk_speech:
+                self.speech.speak(game.pending_user_sunk_speech, interrupt=False)
+        game.pending_user_sunk_speech = None
+        self.render_game()
+        if getattr(game, "winner", None) is not None:
+            end_msg = self._game_end_message(game)
+            if end_msg:
+                self._set_status(end_msg)
+                if self.speech.enabled:
+                    self.speech.speak(end_msg, interrupt=False)
+                if "YOU WIN" in end_msg.upper():
+                    self.sound.play("win")
+                elif "YOU LOSE" in end_msg.upper():
+                    self.sound.play("lose")
+                elif "DRAW" in end_msg.upper():
+                    self.sound.play("tie")
+
+    def _announce_battleship_cpu_shot(self, game: Battleship, square: str, hit: bool) -> None:
+        """Speak/status CPU Battleship shot timed to SFX."""
+        outcome = "hit" if hit else "miss"
+        if square:
+            msg = f"I shoot {square}, {outcome}"
+            game.last_message = msg
+            game.last_message_braille = f"i {outcome} {square.lower()}"
+            self._set_status(msg)
+            if self.speech.enabled:
+                self.speech.speak(outcome)
+        self.render_game()
+        if getattr(game, "winner", None) is not None:
+            end_msg = self._game_end_message(game)
+            if end_msg:
+                self._set_status(end_msg)
+                if self.speech.enabled:
+                    self.speech.speak(end_msg, interrupt=False)
+                if "YOU WIN" in end_msg.upper():
+                    self.sound.play("win")
+                elif "YOU LOSE" in end_msg.upper():
+                    self.sound.play("lose")
+                elif "DRAW" in end_msg.upper():
+                    self.sound.play("tie")
 
     def _speak_game_event(self, names: list[str], before: dict[str, object], game: object) -> None:
         """Speak movement and placement updates as one combined message."""
@@ -786,10 +849,16 @@ class MainFrame(wx.Frame):
             if placed:
                 prev = before.get("board")
                 if isinstance(prev, list):
-                    before_p1 = sum(1 for row in prev for cell in row if cell == 1)
-                    after_p1 = sum(1 for row in game.board for cell in row if cell == 1)
-                    if after_p1 > before_p1:
-                        parts.append("square dropped")
+                    dropped_col = None
+                    for rr in range(game.rows):
+                        for cc in range(game.cols):
+                            if prev[rr][cc] == 0 and game.board[rr][cc] == 1:
+                                dropped_col = cc + 1
+                                break
+                        if dropped_col is not None:
+                            break
+                    if dropped_col is not None:
+                        parts.append(f"square dropped in col {dropped_col}")
         elif isinstance(game, Battleship):
             if moved:
                 row = game.sel_row + 1
@@ -823,17 +892,32 @@ class MainFrame(wx.Frame):
             if "f3" in names and game.phase == "place":
                 parts.append("horizontal" if game.orientation == "H" else "vertical")
             if placed:
-                parts.append(game.last_message)
+                if before.get("phase") == "place":
+                    if before.get("place_index") != game.place_index or game.last_message == "INVALID PLACEMENT":
+                        parts.append(game.last_message)
+                elif before.get("phase") == "attack":
+                    prev = before.get("player_shots")
+                    if isinstance(prev, list) and self._count_marked(game.player_shots) == self._count_marked(prev):
+                        parts.append(game.last_message)
 
         if parts:
             msg = ", ".join(parts)
-            self._set_status(msg)
+            battleship_nav_only = (
+                isinstance(game, Battleship)
+                and moved
+                and not placed
+                and "f3" not in names
+            )
+            if not battleship_nav_only:
+                self._set_status(msg)
             if self.speech.enabled:
                 self.speech.speak(msg)
 
         prev_winner = before.get("winner")
         now_winner = getattr(game, "winner", None)
         if prev_winner is None and now_winner is not None:
+            if isinstance(game, Battleship):
+                return
             end_msg = self._game_end_message(game)
             if end_msg:
                 self._set_status(end_msg)
@@ -843,6 +927,8 @@ class MainFrame(wx.Frame):
                     self.sound.play("win")
                 elif "YOU LOSE" in end_msg.upper():
                     self.sound.play("lose")
+                elif "DRAW" in end_msg.upper():
+                    self.sound.play("tie")
 
     def _play_human_sound(self, names: list[str], before: dict[str, object], game: object) -> None:
         """Play player action sounds."""
@@ -857,9 +943,14 @@ class MainFrame(wx.Frame):
             if isinstance(prev, list):
                 shot = self._new_shot_coord(prev, game.player_shots)
                 if shot is not None:
+                    square = game._square_name(shot[0], shot[1])
+                    hit = shot[2] == 2
+                    if self.speech.enabled:
+                        self.speech.speak(square)
                     self.sound.play("fire")
-                    if shot[2] == 2:
+                    if hit:
                         wx.CallLater(500, lambda: self.sound.play("hit"))
+                    wx.CallLater(500, lambda: self._announce_battleship_user_shot(game, square, hit))
             return
         if isinstance(game, TicTacToe):
             prev = before.get("board")

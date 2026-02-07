@@ -43,6 +43,7 @@ class Battleship:
         self._target_set: set[tuple[int, int]] = set()
         self._player_sunk_ids: set[int] = set()
         self._cpu_sunk_ids: set[int] = set()
+        self.pending_user_sunk_speech: str | None = None
 
     def handle_key(self, names: list[str]) -> None:
         """Handle DotPad key inputs.
@@ -89,8 +90,11 @@ class Battleship:
         self.last_message_braille = f"placed {ship_name}"
         if self.place_index >= len(SHIP_SIZES):
             self.phase = "attack"
+            self.sel_row = 0
+            self.sel_col = 0
 
     def _fire(self) -> None:
+        self.pending_user_sunk_speech = None
         if self.player_shots[self.sel_row][self.sel_col] != 0:
             self.last_message = "ALREADY FIRED"
             self.last_message_braille = "ALREADY FIRED"
@@ -110,15 +114,14 @@ class Battleship:
                     sunk = f"you sunk {SHIP_NAMES[ship_id - 1].lower()}"
                     sunk_parts.append(sunk)
                     sunk_parts_braille.append(sunk.replace("you", "y"))
+                    self.pending_user_sunk_speech = sunk
         if self._all_sunk(self.enemy_board, self.player_shots):
             self.winner = "player"
             self.last_message = f"{user_part}, you win"
             self.last_message_braille = f"{user_part_braille} y win"
+            self.pending_user_sunk_speech = None
             return
-        tail = f", {', '.join(sunk_parts)}" if sunk_parts else ""
-        self.last_message = f"{user_part}{tail}"
-        tail_braille = f" {' '.join(sunk_parts_braille)}" if sunk_parts_braille else ""
-        self.last_message_braille = f"{user_part_braille}{tail_braille}"
+        # Defer non-terminal message updates until CPU turn resolves.
 
     def run_cpu_turn(self) -> bool:
         """Run one CPU turn after player fires."""
