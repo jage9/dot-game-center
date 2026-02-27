@@ -187,13 +187,7 @@ class TicTacToe:
             builder.draw_line(focus_row, focus_col, 6)
 
         rows = builder.rows()
-        if self._last_rows is None:
-            for i, row_bytes in enumerate(rows, start=1):
-                pad.send_display_line(i, row_bytes)
-        else:
-            for i, row_bytes in enumerate(rows, start=1):
-                if row_bytes != self._last_rows[i - 1]:
-                    pad.send_display_line(i, row_bytes)
+        builder.send(pad)
         self._last_rows = rows
 
         if self.winner == "draw":
