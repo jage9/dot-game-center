@@ -1197,11 +1197,6 @@ class MainFrame(wx.Frame):
             # Skip stale jobs queued before mode/game changed.
             if self.mode != "game" or self.current_game is not game or self.pad is None:
                 return
-            if getattr(game, "_last_rows", None) is None:
-                try:
-                    self.pad.clear_graphics()
-                except Exception:
-                    pass
             game.render(self.pad)
 
         self._enqueue_pad_write(game_job)
