@@ -190,21 +190,28 @@ class MainFrame(wx.Frame):
         if self.pad is None:
             return
         processed = 0
-        max_per_tick = 6
+        max_per_tick = 10
         while processed < max_per_tick:
-            if not self._pad_lock.acquire(blocking=False):
-                break
-            try:
-                ser = getattr(self.pad, "_ser", None)
-                # Avoid blocking UI: only parse when serial bytes are already queued.
-                if ser is None or ser.in_waiting <= 0:
+            # Check internal buffer first (no serial lock needed)
+            if getattr(self.pad, "_packet_buffer", []):
+                pkt = self.pad.read_packet(timeout=0)
+            else:
+                # Poll serial
+                if not self._pad_lock.acquire(blocking=False):
                     break
-                pkt = self.pad.read_packet(timeout=0.001)
-            except Exception:
-                self._mark_pad_disconnected()
-                break
-            finally:
-                self._pad_lock.release()
+                try:
+                    ser = getattr(self.pad, "_ser", None)
+                    # Only parse when serial bytes are already queued.
+                    if ser is None or ser.in_waiting <= 0:
+                        break
+                    pkt = self.pad.read_packet(timeout=0.001)
+                except Exception:
+                    self._mark_pad_disconnected()
+                    break
+                finally:
+                    if self._pad_lock.locked():
+                        self._pad_lock.release()
+
             if not pkt or pkt.packet_type is None:
                 break
             if pkt.packet_type in (
@@ -408,39 +415,14 @@ class MainFrame(wx.Frame):
                 return
             builder = self.pad.builder()
 
-            def render_caps_words(row: int, col: int, words: list[str], double_caps_words: set[str] | None = None) -> None:
-                """Render words with explicit capital indicators (dot 6)."""
-                caps2 = double_caps_words or set()
-                cur = col
-                for word in words:
-                    markers = "6 6" if word in caps2 else "6"
-                    marker_cells = 2 if word in caps2 else 1
-                    builder.render_text_dots(markers, row=row, col=cur)
-                    builder.render_text(word.lower(), row=row, col=cur + (marker_cells * 3), use_number_sign=False, use_capital_sign=False)
-                    cur += (marker_cells + len(word) + 1) * 3
-
-            render_caps_words(1, 1, ["DOT", "GAME", "CENTER"])
-            builder.render_text_dots("6", row=5, col=1)
-            builder.render_text(f"version {self.app_version}", row=5, col=4, use_number_sign=True, use_nemeth=False, use_capital_sign=False)
-            # BY J.J. MEDDAUGH with explicit capitals for BY, J, J, MEDDAUGH.
-            builder.render_text_dots("6", row=13, col=1)
-            builder.render_text("by", row=13, col=4, use_number_sign=False, use_capital_sign=False)
-            builder.render_text_dots("6", row=13, col=13)
-            builder.render_text("j", row=13, col=16, use_number_sign=False, use_capital_sign=False)
-            builder.render_text(".", row=13, col=19, use_number_sign=False, use_capital_sign=False)
-            builder.render_text_dots("6", row=13, col=22)
-            builder.render_text("j", row=13, col=25, use_number_sign=False, use_capital_sign=False)
-            builder.render_text(".", row=13, col=28, use_number_sign=False, use_capital_sign=False)
-            builder.render_text_dots("6", row=13, col=34)
-            builder.render_text("meddaugh", row=13, col=37, use_number_sign=False, use_capital_sign=False)
-            builder.render_text("jj@atguys.com", row=17, col=1, use_capital_sign=False)
-            builder.render_text_dots("6 6", row=21, col=1)
-            builder.render_text("mit", row=21, col=7, use_number_sign=False, use_capital_sign=False)
-            builder.render_text_dots("6", row=21, col=19)
-            builder.render_text("license", row=21, col=22, use_number_sign=False, use_capital_sign=False)
+            builder.render_text("Dot Game Center", row=1, col=1)
+            builder.render_text(f"version {self.app_version}", row=5, col=1)
+            builder.render_text(f"By J.J. Meddaugh", row=13, col=1)
+            builder.render_text("jj@atguys.com", row=17, col=1)
+            builder.render_text("MIT License", row=21, col=1)
             # Leave one blank line before GitHub URL.
-            builder.render_text("github.com/jage9/", row=29, col=1, use_capital_sign=False)
-            builder.render_text("dot-game-center", row=33, col=1, use_capital_sign=False)
+            builder.render_text("github.com/jage9/", row=29, col=1)
+            builder.render_text("dot-game-center", row=33, col=1)
             rows = builder.rows()
             for i, row_bytes in enumerate(rows, start=1):
                 self.pad.send_display_line(i, row_bytes)
@@ -714,27 +696,20 @@ class MainFrame(wx.Frame):
             return
         builder = self.pad.builder()
         # Header occupies the first 8 dot rows.
-        # Keep 3-dot cell spacing so capital prefix has its own cell.
-        builder.render_text_dots("6", row=1, col=1)   # D prefix
-        builder.render_text("d", row=1, col=4, use_capital_sign=False)
-        builder.render_text("ot", row=1, col=7, use_capital_sign=False)
-        builder.render_text_dots("6", row=1, col=16)  # G prefix
-        builder.render_text("g", row=1, col=19, use_capital_sign=False)
-        builder.render_text("ame", row=1, col=22, use_capital_sign=False)
-        builder.render_text_dots("6", row=1, col=34)  # C prefix
-        builder.render_text("c", row=1, col=37, use_capital_sign=False)
-        builder.render_text("enter", row=1, col=40, use_capital_sign=False)
+        builder.render_text("Dot", row=1, col=1)
+        builder.render_text("Game", row=1, col=16)
+        builder.render_text("Center", row=1, col=34)
 
         for idx, label in enumerate(MENU_ITEMS):
             row = self._menu_item_row(idx)
             if idx == self.menu_index:
                 self._draw_menu_indicator(builder, row, 1)
-            builder.render_text(label, row=row, col=6, use_capital_sign=False)
+            builder.render_text(label, row=row, col=6)
         link_idx = len(MENU_ITEMS)
         link_row = self._menu_item_row(link_idx)
         if self.menu_index == link_idx:
             self._draw_menu_indicator(builder, link_row, 1)
-        builder.render_text(MENU_LINK_LABEL, row=link_row, col=5, use_capital_sign=False)
+        builder.render_text(MENU_LINK_LABEL, row=link_row, col=5)
 
         # Full redraw on initial/menu-entry; partial redraw for indicator movement.
         if force or prev_index is None:
