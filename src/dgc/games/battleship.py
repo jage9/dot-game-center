@@ -345,20 +345,20 @@ class Battleship:
 
         # Column numbers with one number sign, placed one cell left of "1".
         builder.render_text_dots("3456", row=2, col=max(1, left - 3))
-        builder.render_text("1", row=2, col=left, use_number_sign=False)
+        builder.render_text("1", row=2, col=left, use_number_sign=False, use_capital_sign=False)
         for i in range(1, 10):
             col = left + i * step
             value = str((i + 1) % 10)
-            builder.render_text(value, row=2, col=col, use_number_sign=False)
+            builder.render_text(value, row=2, col=col, use_number_sign=False, use_capital_sign=False)
 
         # Row letters
         for i in range(10):
             row = top + i * step
             letter = chr(ord("A") + i)
-            builder.render_text(letter, row=row, col=1)
+            builder.render_text(letter, row=row, col=1, use_capital_sign=False)
             # Mirror row label at right edge for faster orientation.
             right_col = left + (10 * step) + 1
-            builder.render_text(letter, row=row, col=right_col)
+            builder.render_text(letter, row=row, col=right_col, use_capital_sign=False)
 
         # Grid contents
         if self.phase == "place":
@@ -408,6 +408,7 @@ class Battleship:
             col=56,
             use_number_sign=False,
             use_nemeth=True,
+            use_capital_sign=False,
         )
         # Orientation indicator: 3-cell ship graphic on right side, mid-height.
         if self.phase == "place":
@@ -434,6 +435,7 @@ class Battleship:
             col=1,
             use_number_sign=False,
             use_nemeth=True,
+            use_capital_sign=False,
         )
 
         rows = builder.rows()

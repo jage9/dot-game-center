@@ -15,4 +15,4 @@ def row_to_dot(line: int) -> int:
 
 def send_status(pad, message: str) -> None:
     """Send a fixed-width 20-cell status line with Nemeth/no number sign."""
-    pad.send_text(message[:20].ljust(20), use_number_sign=False, use_nemeth=True)
+    pad.send_text(message[:20].ljust(20), use_number_sign=False, use_nemeth=True, use_capital_sign=False)

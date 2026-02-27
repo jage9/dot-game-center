@@ -194,7 +194,7 @@ class Chess:
                     row = top + r*cell_h + 1,
                     col = left + c*cell_w + 2,
                     use_number_sign=False,
-                    use_capital_sign=piece.isupper()
+                    use_capital_sign=False
                 )
         
         # Selection / Cursor

@@ -121,7 +121,8 @@ class FifteenPuzzle:
                     row=text_row,
                     col=text_col,
                     use_number_sign=False, # Save space
-                    use_nemeth=True
+                    use_nemeth=True,
+                    use_capital_sign=False
                 )
         
         # Selection Cursor (short line at bottom of cell)
