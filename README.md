@@ -39,6 +39,10 @@ Games can be controled both through the Dot Pad as well as the computer.
 - Tic Tac Toe
 - Connect 4
 - Battleship
+- 15 Puzzle (Solo)
+- Checkers
+- Chess
+- Backgammon
 
 ## In-Game Controls
 - DotPad: `panLeft/panRight` move to previous or next column, `F1/F4` move to previous or next row, `F2` perform action
