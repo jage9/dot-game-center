@@ -114,7 +114,7 @@ class FifteenPuzzle:
                 # Center it roughly in the 10x9 cell.
                 # One braille char is 2x3 dots + gaps.
                 text_row = top + r * cell_h + 3
-                text_col = left + c * cell_w + (2 if val < 10 else 1)
+                text_col = left + c * cell_w + (4 if val < 10 else 3)
                 
                 builder.render_text(
                     str(val),

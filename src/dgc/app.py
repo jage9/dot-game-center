@@ -190,28 +190,22 @@ class MainFrame(wx.Frame):
         if self.pad is None:
             return
         processed = 0
-        max_per_tick = 10
+        max_per_tick = 6
         while processed < max_per_tick:
-            # Check internal buffer first (no serial lock needed)
-            if getattr(self.pad, "_packet_buffer", []):
-                pkt = self.pad.read_packet(timeout=0)
-            else:
-                # Poll serial
-                if not self._pad_lock.acquire(blocking=False):
+            if not self._pad_lock.acquire(blocking=False):
+                break
+            try:
+                ser = getattr(self.pad, "_ser", None)
+                # Avoid blocking UI: only parse when serial bytes are already queued.
+                if ser is None or ser.in_waiting <= 0:
                     break
-                try:
-                    ser = getattr(self.pad, "_ser", None)
-                    # Only parse when serial bytes are already queued.
-                    if ser is None or ser.in_waiting <= 0:
-                        break
-                    pkt = self.pad.read_packet(timeout=0.001)
-                except Exception:
-                    self._mark_pad_disconnected()
-                    break
-                finally:
-                    if self._pad_lock.locked():
-                        self._pad_lock.release()
-
+                pkt = self.pad.read_packet(timeout=0.001)
+            except Exception:
+                self._mark_pad_disconnected()
+                break
+            finally:
+                if self._pad_lock.locked():
+                    self._pad_lock.release()
             if not pkt or pkt.packet_type is None:
                 break
             if pkt.packet_type in (
