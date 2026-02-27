@@ -189,8 +189,6 @@ class Chess:
                 if piece == "": continue
                 
                 # Render braille letter
-                # Uppercase for Black (Dots 1-6 + dot 7 or 8?) 
-                # Actually, the SDK handle_text handles caps.
                 builder.render_text(
                     piece,
                     row = top + r*cell_h + 1,
@@ -201,17 +199,13 @@ class Chess:
         
         # Selection / Cursor
         if not self.winner:
-            cr, cc = self.sel_row, self.sel_col
-            # Underline
-            builder.draw_line(top + (cr+1)*cell_h - 1, left + cc*cell_size, 5) # wait cell_size not defined
+            # Underline current cursor
+            builder.draw_line(top + (self.sel_row+1)*cell_h - 1, left + self.sel_col*cell_w + 1, 4)
             
-        # wait, corrected render logic below for cursor
-        builder.draw_line(top + (self.sel_row+1)*cell_h - 1, left + self.sel_col*cell_w + 1, 4)
-        
-        if self.selected_piece:
-            sr, sc = self.selected_piece
-            # Small mark in top-left of selected
-            builder.buffer.set_dot(top + sr*cell_h + 1, left + sc*cell_size + 1, True)
+            if self.selected_piece:
+                sr, sc = self.selected_piece
+                # Small mark in top-left of selected cell
+                builder.buffer.set_dot(top + sr*cell_h + 1, left + sc*cell_w + 1, True)
 
         rows = builder.rows()
         if self._last_rows is None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import random
 from dataclasses import dataclass
 from typing import Optional, List, Tuple
 
@@ -222,4 +223,3 @@ class Checkers:
             send_status(pad, "SELECT TARGET F2")
         else:
             send_status(pad, "PAN MOVE F2 SELECT")
-import random

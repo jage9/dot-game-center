@@ -76,8 +76,8 @@ class FifteenPuzzle:
         er, ec = empty_idx // 4, empty_idx % 4
         
         # Check if selected is adjacent to empty.
-        if (abs(self.sel_row - er) == 1 and self.sel_col == ec) or 
-           (abs(self.sel_col - ec) == 1 and self.sel_row == er):
+        if ((abs(self.sel_row - er) == 1 and self.sel_col == ec) or
+            (abs(self.sel_col - ec) == 1 and self.sel_row == er)):
             idx = self.sel_row * 4 + self.sel_col
             self.board[empty_idx], self.board[idx] = self.board[idx], self.board[empty_idx]
             # Move selection to the new empty spot.
