@@ -729,14 +729,14 @@ class MainFrame(wx.Frame):
         builder.render_text("c", row=1, col=37)
         builder.render_text("enter", row=1, col=40)
 
-        menu_top = 9  # Move menu list down by 8 dot rows.
         for idx, label in enumerate(MENU_ITEMS):
-            row = menu_top + idx * 4
+            row = self._menu_item_row(idx)
             if idx == self.menu_index:
                 self._draw_menu_indicator(builder, row, 1)
             builder.render_text(label, row=row, col=6)
-        link_row = self._menu_item_row(len(MENU_ITEMS))
-        if self.menu_index == len(MENU_ITEMS):
+        link_idx = len(MENU_ITEMS)
+        link_row = self._menu_item_row(link_idx)
+        if self.menu_index == link_idx:
             self._draw_menu_indicator(builder, link_row, 1)
         builder.render_text(MENU_LINK_LABEL, row=link_row, col=5)
 
@@ -771,8 +771,9 @@ class MainFrame(wx.Frame):
     def _menu_item_row(index: int) -> int:
         """Return dot row for a menu item index."""
         if index < len(MENU_ITEMS):
-            return 9 + index * 4
-        return 38
+            return 5 + index * 4
+        # Place the external link at the very bottom line.
+        return 40
 
     @staticmethod
     def _menu_indicator_line(index: int) -> int:
