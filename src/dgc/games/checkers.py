@@ -43,13 +43,29 @@ class Checkers:
         if self.winner or self.turn == "ai":
             return
             
-        if "panLeft" in names: self.sel_col = (self.sel_col - 1) % 8
-        if "panRight" in names: self.sel_col = (self.sel_col + 1) % 8
-        if "f1" in names: self.sel_row = (self.sel_row - 1) % 8
-        if "f4" in names: self.sel_row = (self.sel_row + 1) % 8
+        # Directions: move cursor only to dark squares where (r+c) % 2 == 1
+        if "panLeft" in names:
+            self._move_cursor(0, -1)
+        if "panRight" in names:
+            self._move_cursor(0, 1)
+        if "f1" in names:
+            self._move_cursor(-1, 0)
+        if "f4" in names:
+            self._move_cursor(1, 0)
         
         if "f2" in names:
             self._handle_select()
+
+    def _move_cursor(self, dr: int, dc: int) -> None:
+        """Move cursor skipping invalid squares."""
+        nr, nc = self.sel_row, self.sel_col
+        # Try moving up to 8 times to find next valid square in direction
+        for _ in range(8):
+            nr = (nr + dr) % 8
+            nc = (nc + dc) % 8
+            if (nr + nc) % 2 == 1:
+                self.sel_row, self.sel_col = nr, nc
+                break
 
     def _handle_select(self) -> None:
         target = (self.sel_row, self.sel_col)
@@ -166,7 +182,7 @@ class Checkers:
         
         top = 1
         left = 10
-        cell_size = 4 # 4x4 dots per cell
+        cell_size = 5 # 5x5 dots per cell
         
         # Board background (checkered pattern)
         for r in range(8):
@@ -188,7 +204,7 @@ class Checkers:
                     builder.draw_rectangle(br + 1, bc + 1, br + 3, bc + 3)
                     if p == 2: # King: center dot
                         builder.buffer.set_dot(br + 2, bc + 2, True)
-                else: # AI: Solid 2x2 or X
+                else: # AI: 4 dots at corners
                     builder.buffer.set_dot(br + 1, bc + 1, True)
                     builder.buffer.set_dot(br + 1, bc + 3, True)
                     builder.buffer.set_dot(br + 3, bc + 1, True)
