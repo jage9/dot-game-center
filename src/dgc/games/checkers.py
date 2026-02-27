@@ -43,7 +43,7 @@ class Checkers:
         if self.winner or self.turn == "ai":
             return
             
-        # Directions: move cursor only to dark squares where (r+c) % 2 == 1
+        # Directions: move cursor only to valid squares
         if "panLeft" in names:
             self._move_cursor(0, -1)
         if "panRight" in names:
@@ -57,13 +57,26 @@ class Checkers:
             self._handle_select()
 
     def _move_cursor(self, dr: int, dc: int) -> None:
-        """Move cursor skipping invalid squares."""
+        """Move cursor skipping invalid squares or pieces that cannot move."""
         nr, nc = self.sel_row, self.sel_col
-        # Try moving up to 8 times to find next valid square in direction
-        for _ in range(8):
+        
+        def is_valid_selection(r: int, c: int) -> bool:
+            # If a piece is selected, only valid targets are allowed
+            if self.selected_piece:
+                return (r, c) in self.valid_moves
+            # Otherwise, only dark squares with movable pieces are allowed
+            if (r + c) % 2 != 1:
+                return False
+            piece = self.board[r][c]
+            if piece not in (1, 2): # Not player's piece
+                return False
+            return len(self._get_valid_moves((r, c))) > 0
+
+        # Try all 64 squares if necessary to find next valid one
+        for _ in range(64):
             nr = (nr + dr) % 8
             nc = (nc + dc) % 8
-            if (nr + nc) % 2 == 1:
+            if is_valid_selection(nr, nc):
                 self.sel_row, self.sel_col = nr, nc
                 break
 

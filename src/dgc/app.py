@@ -190,22 +190,28 @@ class MainFrame(wx.Frame):
         if self.pad is None:
             return
         processed = 0
-        max_per_tick = 6
+        max_per_tick = 10
         while processed < max_per_tick:
-            if not self._pad_lock.acquire(blocking=False):
-                break
-            try:
-                ser = getattr(self.pad, "_ser", None)
-                # Avoid blocking UI: only parse when serial bytes are already queued.
-                if ser is None or ser.in_waiting <= 0:
+            # Check internal buffer first (no serial lock needed)
+            if getattr(self.pad, "_packet_buffer", []):
+                pkt = self.pad.read_packet(timeout=0)
+            else:
+                # Poll serial
+                if not self._pad_lock.acquire(blocking=False):
                     break
-                pkt = self.pad.read_packet(timeout=0.001)
-            except Exception:
-                self._mark_pad_disconnected()
-                break
-            finally:
-                if self._pad_lock.locked():
-                    self._pad_lock.release()
+                try:
+                    ser = getattr(self.pad, "_ser", None)
+                    # Only parse when serial bytes are already queued.
+                    if ser is None or ser.in_waiting <= 0:
+                        break
+                    pkt = self.pad.read_packet(timeout=0.001)
+                except Exception:
+                    self._mark_pad_disconnected()
+                    break
+                finally:
+                    if self._pad_lock.locked():
+                        self._pad_lock.release()
+
             if not pkt or pkt.packet_type is None:
                 break
             if pkt.packet_type in (
@@ -707,13 +713,10 @@ class MainFrame(wx.Frame):
 
         # Full redraw on initial/menu-entry; partial redraw for indicator movement.
         if force or prev_index is None:
-            rows = builder.rows()
-
             def full_job() -> None:
                 if self.pad is None:
                     return
-                for i, row_bytes in enumerate(rows, start=1):
-                    self.pad.send_display_line(i, row_bytes)
+                builder.send(self.pad)
                 send_status(self.pad, "F1/F4 MOVE F2 SELECT")
 
             self._enqueue_pad_write(full_job)
