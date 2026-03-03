@@ -192,25 +192,23 @@ class MainFrame(wx.Frame):
         processed = 0
         max_per_tick = 10
         while processed < max_per_tick:
-            # Check internal buffer first (no serial lock needed)
-            if getattr(self.pad, "_packet_buffer", []):
-                pkt = self.pad.read_packet(timeout=0)
-            else:
-                # Poll serial
-                if not self._pad_lock.acquire(blocking=False):
-                    break
-                try:
+            if not self._pad_lock.acquire(blocking=False):
+                break
+            try:
+                if getattr(self.pad, "_packet_buffer", []):
+                    pkt = self.pad.read_packet(timeout=0)
+                else:
                     ser = getattr(self.pad, "_ser", None)
                     # Only parse when serial bytes are already queued.
                     if ser is None or ser.in_waiting <= 0:
                         break
                     pkt = self.pad.read_packet(timeout=0.001)
-                except Exception:
-                    self._mark_pad_disconnected()
-                    break
-                finally:
-                    if self._pad_lock.locked():
-                        self._pad_lock.release()
+            except Exception:
+                self._mark_pad_disconnected()
+                break
+            finally:
+                if self._pad_lock.locked():
+                    self._pad_lock.release()
 
             if not pkt or pkt.packet_type is None:
                 break
@@ -247,12 +245,15 @@ class MainFrame(wx.Frame):
 
     def _enqueue_pad_write(self, job) -> None:
         """Queue a DotPad write job, replacing stale pending work."""
-        if self._write_queue.full():
-            try:
+        try:
+            while self._write_queue.full():
                 self._write_queue.get_nowait()
-            except queue.Empty:
-                pass
-        self._write_queue.put_nowait(job)
+            self._write_queue.put_nowait(job)
+        except queue.Full:
+            # Drop this request if another producer won the race.
+            pass
+        except queue.Empty:
+            pass
 
     def on_button_focus(self, event: wx.FocusEvent, idx: int) -> None:
         """Track menu focus changes from keyboard navigation."""
@@ -766,6 +767,8 @@ class MainFrame(wx.Frame):
             state["orientation"] = game.orientation
             state["place_index"] = game.place_index
             state["player_shots"] = [row[:] for row in game.player_shots]
+        elif isinstance(game, Backgammon):
+            state["phase"] = game.phase
         state["winner"] = getattr(game, "winner", None)
         return state
 
@@ -1143,7 +1146,7 @@ class MainFrame(wx.Frame):
                 self.sound.play("select")
             return
         if isinstance(game, Backgammon):
-            if game.phase == "roll":
+            if before.get("phase") == "roll" and game.phase == "move":
                 self.sound.play("move2") # Dice roll sound
             else:
                 self.sound.play("move1")
@@ -1171,12 +1174,24 @@ class MainFrame(wx.Frame):
                 return "Puzzle Solved! F3 menu."
         elif isinstance(game, Checkers):
             if game.winner:
+                if str(game.winner).upper() == "PLAYER":
+                    return "You win. F3 menu."
+                if str(game.winner).upper() == "AI":
+                    return "You lose. F3 menu."
                 return f"{game.winner} wins. F3 menu."
         elif isinstance(game, Chess):
             if game.winner:
+                if str(game.winner).lower() == "white":
+                    return "You win. F3 menu."
+                if str(game.winner).lower() == "black":
+                    return "You lose. F3 menu."
                 return f"{game.winner} wins. F3 menu."
         elif isinstance(game, Backgammon):
             if game.winner:
+                if str(game.winner).upper() == "PLAYER":
+                    return "You win. F3 menu."
+                if str(game.winner).upper() == "AI":
+                    return "You lose. F3 menu."
                 return f"{game.winner} wins. F3 menu."
         elif isinstance(game, Battleship):
             if game.winner == "player":

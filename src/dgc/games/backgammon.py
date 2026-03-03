@@ -49,8 +49,7 @@ class Backgammon:
         if "panRight" in names: self.sel_point = (self.sel_point + 1) % 24
         if "f1" in names or "f4" in names:
             # Jump between top and bottom
-            if self.sel_point < 12: self.sel_point = 23 - self.sel_point
-            else: self.sel_point = 23 - self.sel_point
+            self.sel_point = 23 - self.sel_point
             
         if "f2" in names:
             if self.phase == "roll":
@@ -93,22 +92,34 @@ class Backgammon:
                 else:
                     self.selected_point = None
 
+    @staticmethod
+    def _move_distance(start: int, end: int, player: str) -> int:
+        """Return die distance for a proposed move."""
+        if player == "player":
+            return end + 1 if start == -1 else end - start
+        return 24 - end if start == -1 else start - end
+
     def _try_move(self, start: int, end: int, player: str) -> bool:
         """Attempt to move a piece. player is 'player' or 'ai'."""
-        if player == "player":
-            if start == -1: # from bar
-                dist = end + 1
-            else:
-                dist = end - start
-        else: # AI
-            if start == -1: # from bar
-                dist = 24 - end
-            else:
-                dist = start - end
+        # Validate source checker.
+        if start == -1:
+            if player == "player" and self.bar[0] <= 0:
+                return False
+            if player == "ai" and self.bar[1] <= 0:
+                return False
+        else:
+            if not (0 <= start < 24):
+                return False
+            if player == "player" and self.board[start] <= 0:
+                return False
+            if player == "ai" and self.board[start] >= 0:
+                return False
+
+        dist = self._move_distance(start, end, player)
                 
         if dist not in self.dice:
             # Check for bearing off
-            if self._can_bear_off(player) and end == start: # Simple home move
+            if start != -1 and self._can_bear_off(player) and end == start: # Simple home move
                 # Find largest die >= required distance
                 req = (24 - start) if player == "player" else (start + 1)
                 best_die = -1
@@ -123,6 +134,8 @@ class Backgammon:
             return False
             
         # Target validation
+        if not (0 <= end < 24):
+            return False
         target = self.board[end]
         if player == "player":
             if target < -1: return False # Blocked
@@ -168,7 +181,7 @@ class Backgammon:
             
             for s in possible_starts:
                 for d in set(self.dice):
-                    target = s + d
+                    target = (d - 1) if s == -1 else (s + d)
                     if 0 <= target < 24:
                         if self.board[target] >= -1: moves.append((s, target))
                     elif self._can_bear_off("player"):
@@ -179,7 +192,7 @@ class Backgammon:
             
             for s in possible_starts:
                 for d in set(self.dice):
-                    target = 23 - d if s == -1 else s - d
+                    target = (24 - d) if s == -1 else (s - d)
                     if 0 <= target < 24:
                         if self.board[target] <= 1: moves.append((s, target))
                     elif self._can_bear_off("ai"):
@@ -202,7 +215,11 @@ class Backgammon:
         self.dice = [d1] * 4 if d1 == d2 else [d1, d2]
         
         # 2. Move AI
+        safety = 0
         while self.dice:
+            safety += 1
+            if safety > 64:
+                break
             moves = self._get_all_valid_moves("ai")
             if not moves: break
             # Prioritize hits, then bearing off, then random
@@ -213,7 +230,13 @@ class Backgammon:
             elif home: move = random.choice(home)
             else: move = random.choice(moves)
             
-            self._try_move(move[0], move[1], "ai")
+            if not self._try_move(move[0], move[1], "ai"):
+                # Keep AI from stalling forever on any unexpected invalid move.
+                dist = self._move_distance(move[0], move[1], "ai")
+                if dist in self.dice:
+                    self.dice.remove(dist)
+                elif self.dice:
+                    self.dice.pop(0)
             
         self._end_turn()
         return True
@@ -273,19 +296,35 @@ class Backgammon:
             if self.selected_point == -1:
                 builder.render_text_dots("1", row=20, col=bar_col - 4)
             else:
-                # Small dot above selection
-                pass
+                if self.selected_point < 12:
+                    if self.selected_point < 6:
+                        sx = 56 - self.selected_point * 4
+                    else:
+                        sx = 26 - (self.selected_point - 6) * 4
+                    builder.render_text_dots("1", row=37, col=sx)
+                else:
+                    si = self.selected_point - 12
+                    if si < 6:
+                        sx = 6 + si * 4
+                    else:
+                        sx = 36 + (si - 6) * 4
+                    builder.render_text_dots("1", row=3, col=sx)
 
         rows = builder.rows()
         builder.send(pad)
         self._last_rows = rows
         
-        if self.phase == "roll":
+        if self.winner == "PLAYER":
+            send_status(pad, "YOU WIN F3 MENU")
+        elif self.winner == "AI":
+            send_status(pad, "YOU LOSE F3 MENU")
+        elif self.phase == "roll":
             send_status(pad, "F2 TO ROLL")
         else:
             dice_str = " ".join(map(str, self.dice))
-            status = f"DICE {dice_str} F2 MOVE"
-            if self._can_bear_off("player"): status += " (HOME)"
+            status = f"DICE {dice_str} F2 MV"
+            if self._can_bear_off("player"):
+                status = f"DICE {dice_str} F2 HOME"
             send_status(pad, status)
 
     def _draw_stack(self, builder, x, start_y, count, direction):

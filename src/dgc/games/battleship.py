@@ -404,7 +404,7 @@ class Battleship:
         # Current square in bottom-right corner of graphics area.
         builder.render_text(
             self._square_name(self.sel_row, self.sel_col),
-            row=38,
+            row=34,
             col=56,
             use_number_sign=False,
             use_nemeth=True,

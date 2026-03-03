@@ -197,4 +197,4 @@ class TicTacToe:
         elif self.winner == self.ai_mark:
             send_status(pad, "YOU LOSE F3 MENU")
         else:
-            send_status(pad, "PAN/F1/F4 MOVE F2 PLACE")
+            send_status(pad, "PAN/F1/F4 MV F2 PL")

@@ -138,4 +138,4 @@ class FifteenPuzzle:
         if self.winner:
             send_status(pad, "SOLVED! F3 MENU")
         else:
-            send_status(pad, "PAN/F1/F4 MOVE F2 SLIDE")
+            send_status(pad, "PAN/F1/F4 MV F2 SL")

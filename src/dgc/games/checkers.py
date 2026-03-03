@@ -58,6 +58,9 @@ class Checkers:
 
     def _move_cursor(self, dr: int, dc: int) -> None:
         """Move cursor skipping invalid squares or pieces that cannot move."""
+        if self.selected_piece and not self.valid_moves:
+            self.selected_piece = None
+            self.valid_moves = []
         nr, nc = self.sel_row, self.sel_col
         
         def is_valid_selection(r: int, c: int) -> bool:
@@ -94,15 +97,22 @@ class Checkers:
             else:
                 # Deselect or select another of own piece
                 if piece in (1, 2):
-                    self.selected_piece = target
-                    self.valid_moves = self._get_valid_moves(target)
+                    moves = self._get_valid_moves(target)
+                    if moves:
+                        self.selected_piece = target
+                        self.valid_moves = moves
+                    else:
+                        self.selected_piece = None
+                        self.valid_moves = []
                 else:
                     self.selected_piece = None
                     self.valid_moves = []
         else:
             if piece in (1, 2):
-                self.selected_piece = target
-                self.valid_moves = self._get_valid_moves(target)
+                moves = self._get_valid_moves(target)
+                if moves:
+                    self.selected_piece = target
+                    self.valid_moves = moves
 
     def _get_valid_moves(self, pos: Tuple[int, int], board=None) -> List[Tuple[int, int]]:
         if board is None: board = self.board
@@ -164,6 +174,9 @@ class Checkers:
         best_move = self._get_best_ai_move()
         if best_move:
             self._make_move(best_move[0], best_move[1])
+        else:
+            self.winner = "PLAYER"
+            return True
         
         self.turn = "player"
         self._check_winner()
@@ -187,8 +200,27 @@ class Checkers:
     def _check_winner(self) -> None:
         p1 = any(self.board[r][c] in (1, 2) for r in range(8) for c in range(8))
         p2 = any(self.board[r][c] in (3, 4) for r in range(8) for c in range(8))
-        if not p1: self.winner = "AI"
-        if not p2: self.winner = "PLAYER"
+        if not p1:
+            self.winner = "AI"
+            return
+        if not p2:
+            self.winner = "PLAYER"
+            return
+
+        player_has_moves = any(
+            self.board[r][c] in (1, 2) and self._get_valid_moves((r, c))
+            for r in range(8)
+            for c in range(8)
+        )
+        ai_has_moves = any(
+            self.board[r][c] in (3, 4) and self._get_valid_moves((r, c))
+            for r in range(8)
+            for c in range(8)
+        )
+        if not player_has_moves:
+            self.winner = "AI"
+        elif not ai_has_moves:
+            self.winner = "PLAYER"
 
     def render(self, pad: dp.DotPad) -> None:
         builder = pad.builder()
