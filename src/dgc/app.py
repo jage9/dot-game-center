@@ -108,7 +108,7 @@ class MainFrame(wx.Frame):
         # Poll key packets on the UI thread so serial read/write stays single-threaded.
         self.key_timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self._on_key_timer, self.key_timer)
-        self.key_timer.Start(50)
+        self.key_timer.Start(20)
         self.reconnect_timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self._on_reconnect_timer, self.reconnect_timer)
         self.reconnect_timer.Start(1000)
@@ -190,25 +190,31 @@ class MainFrame(wx.Frame):
         if self.pad is None:
             return
         processed = 0
-        max_per_tick = 10
+        max_per_tick = 30
         while processed < max_per_tick:
-            if not self._pad_lock.acquire(blocking=False):
-                break
-            try:
-                if getattr(self.pad, "_packet_buffer", []):
+            # Drain already-buffered packets first so key handling remains
+            # responsive while a long graphics write is active.
+            if getattr(self.pad, "_packet_buffer", []):
+                try:
                     pkt = self.pad.read_packet(timeout=0)
-                else:
+                except Exception:
+                    self._mark_pad_disconnected()
+                    break
+            else:
+                if not self._pad_lock.acquire(blocking=False):
+                    break
+                try:
                     ser = getattr(self.pad, "_ser", None)
                     # Only parse when serial bytes are already queued.
                     if ser is None or ser.in_waiting <= 0:
                         break
                     pkt = self.pad.read_packet(timeout=0.001)
-            except Exception:
-                self._mark_pad_disconnected()
-                break
-            finally:
-                if self._pad_lock.locked():
-                    self._pad_lock.release()
+                except Exception:
+                    self._mark_pad_disconnected()
+                    break
+                finally:
+                    if self._pad_lock.locked():
+                        self._pad_lock.release()
 
             if not pkt or pkt.packet_type is None:
                 break
@@ -457,7 +463,9 @@ class MainFrame(wx.Frame):
             return
 
         if self.mode == "game" and self._cpu_pending:
-            return
+            nav_only = {"panLeft", "panRight", "f1", "f4"}
+            if not any(k in nav_only for k in names):
+                return
 
         # Global menu chord
         if "f1" in names and "f4" in names:
@@ -467,11 +475,11 @@ class MainFrame(wx.Frame):
         if self.mode == "menu":
             menu_count = len(MENU_ITEMS) + 1  # plus atguys.com link
             nav_pressed = False
-            if "f1" in names:
+            if "f1" in names or "panLeft" in names:
                 nav_pressed = True
                 self.menu_index = (self.menu_index - 1) % menu_count
                 self._focus_menu_index(self.menu_index)
-            if "f4" in names:
+            if "f4" in names or "panRight" in names:
                 nav_pressed = True
                 self.menu_index = (self.menu_index + 1) % menu_count
                 self._focus_menu_index(self.menu_index)
@@ -507,10 +515,10 @@ class MainFrame(wx.Frame):
             if code == wx.WXK_ESCAPE:
                 self.back_to_menu()
                 return
-            if self._cpu_pending:
-                return
             if code == wx.WXK_F3 and self._game_over():
                 self.back_to_menu()
+                return
+            if self._cpu_pending and code not in (wx.WXK_LEFT, wx.WXK_RIGHT, wx.WXK_UP, wx.WXK_DOWN):
                 return
             if code == wx.WXK_LEFT:
                 self.on_pad_keys(["panLeft"])
