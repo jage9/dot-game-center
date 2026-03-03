@@ -13,13 +13,13 @@ import wx.grid as gridlib
 import dotpad as dp
 from dotpad.serial_driver import PacketType
 
-from .games import TicTacToe, Connect4, Battleship
+from .games import TicTacToe, Connect4, Battleship, FifteenPuzzle, Backgammon, Checkers, Chess
 from .games.utils import send_status
 from .sound import SoundManager
 from .speech import SpeechOutput
 
 
-GAME_ITEMS = ["Tic Tac Toe", "Connect 4", "Battleship"]
+GAME_ITEMS = ["Tic Tac Toe", "Connect 4", "Battleship", "15 Puzzle", "Backgammon", "Checkers", "Chess"]
 MENU_ITEMS = [*GAME_ITEMS, "About", "Exit"]
 APP_TITLE = "Dot Game Center"
 MENU_LINK_LABEL = "visit atguys.com"
@@ -291,6 +291,16 @@ class MainFrame(wx.Frame):
             game = TicTacToe()
         elif idx == 1:
             game = Connect4()
+        elif idx == 2:
+            game = Battleship()
+        elif idx == 3:
+            game = FifteenPuzzle()
+        elif idx == 4:
+            game = Backgammon()
+        elif idx == 5:
+            game = Checkers()
+        elif idx == 6:
+            game = Chess()
         else:
             game = Battleship()
         self.current_game = game
@@ -542,6 +552,12 @@ class MainFrame(wx.Frame):
             rows, cols = 3, 3
         elif isinstance(self.current_game, Connect4):
             rows, cols = self.current_game.rows, self.current_game.cols
+        elif isinstance(self.current_game, FifteenPuzzle):
+            rows, cols = 4, 4
+        elif isinstance(self.current_game, (Checkers, Chess)):
+            rows, cols = 8, 8
+        elif isinstance(self.current_game, Backgammon):
+            rows, cols = 2, 12
         else:
             rows, cols = 10, 10
         cur_rows = self.game_grid.GetNumberRows()
@@ -564,6 +580,21 @@ class MainFrame(wx.Frame):
         elif isinstance(self.current_game, Connect4):
             for r in range(rows):
                 self.game_grid.SetRowLabelValue(r, f"R{r + 1}")
+            for c in range(cols):
+                self.game_grid.SetColLabelValue(c, str(c + 1))
+        elif isinstance(self.current_game, (Checkers, Chess)):
+            for r in range(rows):
+                self.game_grid.SetRowLabelValue(r, str(8 - r))
+            for c in range(cols):
+                self.game_grid.SetColLabelValue(c, chr(ord("a") + c))
+        elif isinstance(self.current_game, FifteenPuzzle):
+            for r in range(rows):
+                self.game_grid.SetRowLabelValue(r, str(r + 1))
+            for c in range(cols):
+                self.game_grid.SetColLabelValue(c, str(c + 1))
+        elif isinstance(self.current_game, Backgammon):
+            self.game_grid.SetRowLabelValue(0, "Top")
+            self.game_grid.SetRowLabelValue(1, "Bot")
             for c in range(cols):
                 self.game_grid.SetColLabelValue(c, str(c + 1))
         else:
@@ -604,6 +635,33 @@ class MainFrame(wx.Frame):
                         cell = "." if shot == 0 else "o" if shot == 1 else "x"
                         self.game_grid.SetCellValue(r, c, cell)
             self.game_grid.SetGridCursor(self.current_game.sel_row, self.current_game.sel_col)
+        elif isinstance(self.current_game, FifteenPuzzle):
+            for r in range(4):
+                for c in range(4):
+                    tile = self.current_game.board[r][c]
+                    self.game_grid.SetCellValue(r, c, str(tile) if tile else "  ")
+            self.game_grid.SetGridCursor(self.current_game.sel_row, self.current_game.sel_col)
+        elif isinstance(self.current_game, (Checkers, Chess)):
+            for r in range(8):
+                for c in range(8):
+                    val = self.current_game.board[r][c]
+                    if isinstance(self.current_game, Chess):
+                        from .games.chess_game import _PIECE_NAMES, EMPTY as CH_EMPTY
+                        cell = _PIECE_NAMES.get(val, ".") if val != CH_EMPTY else "."
+                    else:
+                        _CK = {0: ".", 1: "x", 2: "o", 3: "X", 4: "O"}
+                        cell = _CK.get(val, ".")
+                    self.game_grid.SetCellValue(r, c, cell)
+            self.game_grid.SetGridCursor(self.current_game.sel_row, self.current_game.sel_col)
+        elif isinstance(self.current_game, Backgammon):
+            # Top row: points 24-13, bottom row: points 1-12
+            for c in range(12):
+                pt_top = 23 - c   # point index for top row
+                pt_bot = c        # point index for bottom row
+                top_val = self.current_game.points[pt_top]
+                bot_val = self.current_game.points[pt_bot]
+                self.game_grid.SetCellValue(0, c, str(top_val) if top_val != 0 else ".")
+                self.game_grid.SetCellValue(1, c, str(bot_val) if bot_val != 0 else ".")
         self.game_grid.ForceRefresh()
 
     def _on_grid_select(self, event: gridlib.GridEvent) -> None:
@@ -619,6 +677,12 @@ class MainFrame(wx.Frame):
         elif isinstance(self.current_game, Connect4):
             self.current_game.sel_col = c
         elif isinstance(self.current_game, Battleship):
+            self.current_game.sel_row = r
+            self.current_game.sel_col = c
+        elif isinstance(self.current_game, (FifteenPuzzle, Checkers, Chess)):
+            self.current_game.sel_row = r
+            self.current_game.sel_col = c
+        elif isinstance(self.current_game, Backgammon):
             self.current_game.sel_row = r
             self.current_game.sel_col = c
         self.render_game()
@@ -735,6 +799,9 @@ class MainFrame(wx.Frame):
             state["orientation"] = game.orientation
             state["place_index"] = game.place_index
             state["player_shots"] = [row[:] for row in game.player_shots]
+        elif isinstance(game, (FifteenPuzzle, Checkers, Chess, Backgammon)):
+            state["turn"] = getattr(game, "turn", None)
+            state["phase"] = getattr(game, "phase", None)
         state["winner"] = getattr(game, "winner", None)
         return state
 
@@ -784,6 +851,12 @@ class MainFrame(wx.Frame):
             if not isinstance(prev, list):
                 return False
             return self._count_marked(game.player_shots) > self._count_marked(prev)
+        if isinstance(game, (Checkers, Chess)):
+            # Schedule AI when player successfully moves (turn changed to AI)
+            return before.get("turn") == 1 and game.turn != 1
+        if isinstance(game, Backgammon):
+            # Schedule AI when player ends their turn
+            return before.get("turn") == 1 and game.turn == 2
         return False
 
     def _schedule_cpu_turn(self) -> None:
@@ -806,6 +879,8 @@ class MainFrame(wx.Frame):
         if isinstance(self.current_game, TicTacToe):
             did_move = self.current_game.run_ai_turn()
         elif isinstance(self.current_game, Connect4):
+            did_move = self.current_game.run_ai_turn()
+        elif isinstance(self.current_game, (Checkers, Chess, Backgammon)):
             did_move = self.current_game.run_ai_turn()
         elif isinstance(self.current_game, Battleship):
             before_enemy = [row[:] for row in self.current_game.enemy_shots]
@@ -1019,6 +1094,28 @@ class MainFrame(wx.Frame):
                     prev = before.get("player_shots")
                     if isinstance(prev, list) and self._count_marked(game.player_shots) == self._count_marked(prev):
                         parts.append(game.last_message)
+        elif isinstance(game, FifteenPuzzle):
+            if moved:
+                tile = game.board[game.sel_row][game.sel_col]
+                parts.append(f"tile {tile}" if tile else "empty")
+            if placed and game.winner is None:
+                parts.append(f"moves {len(game._undo_stack)}")
+        elif isinstance(game, Checkers):
+            if placed:
+                status = getattr(game, "_status_msg", "")
+                if status:
+                    parts.append(status)
+            elif moved:
+                parts.append(f"row {game.sel_row + 1} col {game.sel_col + 1}")
+        elif isinstance(game, Chess):
+            if placed and game.turn == 1:
+                check = getattr(game, "_check", False)
+                parts.append("check" if check else "your turn")
+            elif moved:
+                parts.append(f"{chr(ord('a') + game.sel_col)}{8 - game.sel_row}")
+        elif isinstance(game, Backgammon):
+            if placed:
+                parts.append(getattr(game, "_status_msg", "")[:20])
 
         if parts:
             msg = ", ".join(parts)
@@ -1083,6 +1180,12 @@ class MainFrame(wx.Frame):
             if isinstance(prev, list):
                 if self._count_token(game.board, 1) > self._count_token(prev, 1):
                     self.sound.play("move1")
+            return
+        if isinstance(game, (FifteenPuzzle, Checkers, Chess, Backgammon)):
+            # Play a move sound if the turn changed or winner was set
+            if before.get("turn") != getattr(game, "turn", None) or \
+               (before.get("winner") is None and game.winner is not None):
+                self.sound.play("move1")
 
     @staticmethod
     def _game_end_message(game: object) -> str:
@@ -1106,6 +1209,16 @@ class MainFrame(wx.Frame):
                 return "You win. F3 menu."
             if game.winner == "cpu":
                 return "You lose. F3 menu."
+        elif isinstance(game, FifteenPuzzle):
+            if game.winner == "win":
+                return "You win. F3 menu."
+        elif isinstance(game, (Checkers, Backgammon, Chess)):
+            if game.winner == "player":
+                return "You win. F3 menu."
+            if game.winner == "cpu":
+                return "You lose. F3 menu."
+            if game.winner == "draw":
+                return "Draw. F3 menu."
         return ""
 
     def render_game(self) -> None:
