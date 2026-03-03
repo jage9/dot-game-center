@@ -73,8 +73,8 @@ class Chess:
             if 0 <= nr < 8 and 0 <= nc < 8:
                 if self.board[nr][nc] == 2 * by_color:
                     return True
-        # Pawns (attack toward the opposite direction the pawn moves)
-        pawn_dr = -by_color   # attacker's pawn attacks toward +by_color row
+        # Pawns (attack diagonally forward in the pawn's direction of movement)
+        pawn_dr = by_color   # white pawns (by_color=1) attack toward row-1; black toward row+1
         for dc in (-1, 1):
             pr, pc = r + pawn_dr, c + dc
             if 0 <= pr < 8 and 0 <= pc < 8:
