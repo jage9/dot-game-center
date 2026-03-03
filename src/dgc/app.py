@@ -108,7 +108,7 @@ class MainFrame(wx.Frame):
         # Poll key packets on the UI thread so serial read/write stays single-threaded.
         self.key_timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self._on_key_timer, self.key_timer)
-        self.key_timer.Start(20)
+        self.key_timer.Start(50)
         self.reconnect_timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self._on_reconnect_timer, self.reconnect_timer)
         self.reconnect_timer.Start(1000)
@@ -190,31 +190,22 @@ class MainFrame(wx.Frame):
         if self.pad is None:
             return
         processed = 0
-        max_per_tick = 30
+        max_per_tick = 6
         while processed < max_per_tick:
-            # Drain already-buffered packets first so key handling remains
-            # responsive while a long graphics write is active.
-            if getattr(self.pad, "_packet_buffer", []):
-                try:
-                    pkt = self.pad.read_packet(timeout=0)
-                except Exception:
-                    self._mark_pad_disconnected()
+            if not self._pad_lock.acquire(blocking=False):
+                break
+            try:
+                ser = getattr(self.pad, "_ser", None)
+                # Avoid blocking UI: only parse when serial bytes are already queued.
+                if ser is None or ser.in_waiting <= 0:
                     break
-            else:
-                if not self._pad_lock.acquire(blocking=False):
-                    break
-                try:
-                    ser = getattr(self.pad, "_ser", None)
-                    # Only parse when serial bytes are already queued.
-                    if ser is None or ser.in_waiting <= 0:
-                        break
-                    pkt = self.pad.read_packet(timeout=0.001)
-                except Exception:
-                    self._mark_pad_disconnected()
-                    break
-                finally:
-                    if self._pad_lock.locked():
-                        self._pad_lock.release()
+                pkt = self.pad.read_packet(timeout=0.001)
+            except Exception:
+                self._mark_pad_disconnected()
+                break
+            finally:
+                if self._pad_lock.locked():
+                    self._pad_lock.release()
 
             if not pkt or pkt.packet_type is None:
                 break
@@ -251,15 +242,16 @@ class MainFrame(wx.Frame):
 
     def _enqueue_pad_write(self, job) -> None:
         """Queue a DotPad write job, replacing stale pending work."""
-        try:
-            while self._write_queue.full():
-                self._write_queue.get_nowait()
-            self._write_queue.put_nowait(job)
-        except queue.Full:
-            # Drop this request if another producer won the race.
-            pass
-        except queue.Empty:
-            pass
+        while True:
+            try:
+                self._write_queue.put_nowait(job)
+                return
+            except queue.Full:
+                # Drop one stale queued job, then retry enqueueing this one.
+                try:
+                    self._write_queue.get_nowait()
+                except queue.Empty:
+                    pass
 
     def on_button_focus(self, event: wx.FocusEvent, idx: int) -> None:
         """Track menu focus changes from keyboard navigation."""
@@ -463,9 +455,7 @@ class MainFrame(wx.Frame):
             return
 
         if self.mode == "game" and self._cpu_pending:
-            nav_only = {"panLeft", "panRight", "f1", "f4"}
-            if not any(k in nav_only for k in names):
-                return
+            return
 
         # Global menu chord
         if "f1" in names and "f4" in names:
@@ -475,11 +465,11 @@ class MainFrame(wx.Frame):
         if self.mode == "menu":
             menu_count = len(MENU_ITEMS) + 1  # plus atguys.com link
             nav_pressed = False
-            if "f1" in names or "panLeft" in names:
+            if "f1" in names:
                 nav_pressed = True
                 self.menu_index = (self.menu_index - 1) % menu_count
                 self._focus_menu_index(self.menu_index)
-            if "f4" in names or "panRight" in names:
+            if "f4" in names:
                 nav_pressed = True
                 self.menu_index = (self.menu_index + 1) % menu_count
                 self._focus_menu_index(self.menu_index)
@@ -518,7 +508,7 @@ class MainFrame(wx.Frame):
             if code == wx.WXK_F3 and self._game_over():
                 self.back_to_menu()
                 return
-            if self._cpu_pending and code not in (wx.WXK_LEFT, wx.WXK_RIGHT, wx.WXK_UP, wx.WXK_DOWN):
+            if self._cpu_pending:
                 return
             if code == wx.WXK_LEFT:
                 self.on_pad_keys(["panLeft"])
@@ -722,11 +712,23 @@ class MainFrame(wx.Frame):
 
         # Full redraw on initial/menu-entry; partial redraw for indicator movement.
         if force or prev_index is None:
+            rows = builder.rows()
+
             def full_job() -> None:
                 if self.pad is None:
                     return
-                builder.send(self.pad)
+                sent_ok = True
+                for i, row_bytes in enumerate(rows, start=1):
+                    if not self.pad.send_display_line(i, row_bytes):
+                        sent_ok = False
+                if not sent_ok:
+                    sent_ok = True
+                    for i, row_bytes in enumerate(rows, start=1):
+                        if not self.pad.send_display_line(i, row_bytes):
+                            sent_ok = False
                 send_status(self.pad, "F1/F4 MOVE F2 SELECT")
+                if sent_ok:
+                    self._last_menu_state = state
 
             self._enqueue_pad_write(full_job)
         else:
@@ -737,12 +739,14 @@ class MainFrame(wx.Frame):
             def partial_job() -> None:
                 if self.pad is None:
                     return
-                self.pad.send_display_line(cur_line, rows[cur_line - 1])
+                sent_ok = self.pad.send_display_line(cur_line, rows[cur_line - 1])
                 if prev_line != cur_line:
-                    self.pad.send_display_line(prev_line, rows[prev_line - 1])
+                    if not self.pad.send_display_line(prev_line, rows[prev_line - 1]):
+                        sent_ok = False
+                if sent_ok:
+                    self._last_menu_state = state
 
             self._enqueue_pad_write(partial_job)
-        self._last_menu_state = state
 
     @staticmethod
     def _menu_item_row(index: int) -> int:

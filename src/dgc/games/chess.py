@@ -208,8 +208,24 @@ class Chess:
                 builder.buffer.set_dot(top + sr*cell_h + 1, left + sc*cell_w + 1, True)
 
         rows = builder.rows()
-        builder.send(pad)
-        self._last_rows = rows
+        sent_ok = True
+        first_frame = self._last_rows is None
+        if first_frame:
+            for i, row_bytes in enumerate(rows, start=1):
+                if not pad.send_display_line(i, row_bytes):
+                    sent_ok = False
+        else:
+            for i, row_bytes in enumerate(rows, start=1):
+                if row_bytes != self._last_rows[i - 1]:
+                    if not pad.send_display_line(i, row_bytes):
+                        sent_ok = False
+        if first_frame and not sent_ok:
+            sent_ok = True
+            for i, row_bytes in enumerate(rows, start=1):
+                if not pad.send_display_line(i, row_bytes):
+                    sent_ok = False
+        if sent_ok:
+            self._last_rows = rows
         
         if self.winner:
             send_status(pad, f"{self.winner} WINS! F3 MENU")

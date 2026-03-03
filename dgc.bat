@@ -4,7 +4,7 @@ cd /d "%~dp0"
 
 if not exist ".venv\Scripts\python.exe" goto run_setup
 
-".venv\Scripts\python.exe" -c "import dotpad" >nul 2>&1
+".venv\Scripts\python.exe" -c "import sys; import dotpad.serial_driver as s; sys.exit(0 if not hasattr(s.DotPad, 'send_graphic_frame') else 1)" >nul 2>&1
 if errorlevel 1 goto run_setup
 goto run_app
 
@@ -20,4 +20,3 @@ if errorlevel 1 (
 uv run dgc
 if errorlevel 1 exit /b 1
 exit /b 0
-
