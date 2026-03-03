@@ -40,6 +40,19 @@ Games can be controled both through the Dot Pad as well as the computer.
 - Connect 4
 - Battleship
 
+## Display-First Prototype Games
+The following four games are display-first prototypes.  They render a correct
+tactile initial board layout on the Dot Pad X and support cursor navigation,
+but do not yet implement full move validation or an AI opponent.
+
+- **15 Puzzle** — 4 × 4 sliding tile puzzle; F2 slides the selected tile toward the blank.
+- **Backgammon** — Standard 24-point board with initial checker positions.
+- **Checkers** — 8 × 8 draughts board with standard opening layout.
+- **Chess** — 8 × 8 board with all pieces in standard starting positions.
+
+Navigation for all prototype games: PanLeft/PanRight move left/right; F1/F4 move up/down.
+F3 (or Escape) returns to the main menu.
+
 ## In-Game Controls
 - DotPad: `panLeft/panRight` move to previous or next column, `F1/F4` move to previous or next row, `F2` perform action
 - Keyboard: arrow keys move, `Enter/Space` action, `Escape` back to menu
