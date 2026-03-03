@@ -642,13 +642,9 @@ class MainFrame(wx.Frame):
                     self.game_grid.SetCellValue(r, c, str(tile) if tile else "  ")
             self.game_grid.SetGridCursor(self.current_game.sel_row, self.current_game.sel_col)
         elif isinstance(self.current_game, (Checkers, Chess)):
-            _PIECE_SYMS = {0: ".", 1: "r", 2: "b", 3: "R", 4: "B",
-                           -1: "p", -2: "n", -3: "b", -4: "r", -5: "q", -6: "k",
-                           1: "P", 2: "N", 3: "B", 4: "R", 5: "Q", 6: "K"}
             for r in range(8):
                 for c in range(8):
-                    val = self.current_game.board[r][c] if isinstance(self.current_game, Chess) \
-                        else self.current_game.board[r][c]
+                    val = self.current_game.board[r][c]
                     if isinstance(self.current_game, Chess):
                         from .games.chess_game import _PIECE_NAMES, EMPTY as CH_EMPTY
                         cell = _PIECE_NAMES.get(val, ".") if val != CH_EMPTY else "."

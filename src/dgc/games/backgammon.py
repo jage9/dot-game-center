@@ -414,7 +414,6 @@ class Backgammon:
             self._check_win()
             if self.winner:
                 return True
-            _ = None  # loop variable reset not needed; just break condition
         self.turn = 1
         self.phase = "roll"
         self._status_msg = "F2 ROLL DICE"

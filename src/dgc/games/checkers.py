@@ -258,12 +258,13 @@ class Checkers:
             captures = self._piece_captures(jr, jc)
             for mv in captures:
                 if mv[2] == r and mv[3] == c:
+                    orig_piece = self.board[jr][jc]
                     self._apply_move(mv)
                     self._half_moves = 0
                     # Check if can continue jumping
                     new_captures = self._piece_captures(r, c)
-                    # Stop multi-jump if piece was just kinged
-                    just_kinged = self.board[r][c] == PLAYER_K and r == 0
+                    # Stop multi-jump if piece was just promoted to king
+                    just_kinged = orig_piece == PLAYER and self.board[r][c] == PLAYER_K
                     if new_captures and not just_kinged:
                         self._jumping_piece = (r, c)
                         self.sel_row, self.sel_col = r, c
@@ -290,13 +291,14 @@ class Checkers:
             all_moves = self._get_moves(1)
             for mv in all_moves:
                 if mv[0] == sr and mv[1] == sc and mv[2] == r and mv[3] == c:
+                    orig_piece = self.board[sr][sc]
                     is_capture = self._apply_move(mv)
                     if is_capture:
                         self._half_moves = 0
                         # Check for continuation jump
                         new_captures = self._piece_captures(r, c)
-                        # Stop multi-jump if piece was just kinged (reached promotion row)
-                        just_kinged = self.board[r][c] == PLAYER_K and r == 0
+                        # Stop multi-jump if piece was just promoted to king
+                        just_kinged = orig_piece == PLAYER and self.board[r][c] == PLAYER_K
                         if new_captures and not just_kinged:
                             self._jumping_piece = (r, c)
                             self.selected = None
@@ -338,14 +340,15 @@ class Checkers:
             self._apply_move(move)
             self._half_moves = 0
             # Check multi-jump
-            fr, fc, tr, tc = move[0], move[1], move[2], move[3]
+            tr, tc = move[2], move[3]
             next_caps = self._piece_captures(tr, tc)
             while next_caps:
                 mv2 = random.choice(next_caps)
+                orig = self.board[mv2[0]][mv2[1]]
                 self._apply_move(mv2)
                 ntr, ntc = mv2[2], mv2[3]
-                # Stop if piece was just kinged (AI kinging row = 7)
-                if self.board[ntr][ntc] == AI_K and ntr == 7:
+                # Stop if piece was just promoted to king
+                if orig == AI and self.board[ntr][ntc] == AI_K:
                     break
                 next_caps = self._piece_captures(ntr, ntc)
                 tr, tc = ntr, ntc

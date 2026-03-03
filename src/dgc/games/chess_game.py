@@ -215,6 +215,7 @@ def _apply_move(s: _State, mv: tuple) -> None:
     """Apply a move to the state in-place."""
     fr, fc, tr, tc = mv[0], mv[1], mv[2], mv[3]
     piece = s.board[fr][fc]
+    captured = s.board[tr][tc]   # original occupant at destination (EMPTY or enemy)
     s.board[tr][tc] = piece
     s.board[fr][fc] = EMPTY
     s.ep_sq = None
@@ -228,6 +229,7 @@ def _apply_move(s: _State, mv: tuple) -> None:
     elif extra == 'ep':
         cr, cc = mv[5], mv[6]
         s.board[cr][cc] = EMPTY
+        captured = -piece  # en passant always captures an enemy pawn
     elif extra == 'promo':
         s.board[tr][tc] = mv[5]
 
@@ -254,8 +256,8 @@ def _apply_move(s: _State, mv: tuple) -> None:
         elif fr == 0 and fc == 0:
             s.castling[3] = False
 
-    # 50-move rule counter
-    if abs(piece) == 1 or s.board[tr][tc] != piece:  # pawn move or capture already applied
+    # 50-move rule counter: reset on pawn move or capture
+    if abs(piece) == 1 or captured != EMPTY:
         s.half_moves = 0
     else:
         s.half_moves += 1
