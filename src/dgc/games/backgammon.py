@@ -110,16 +110,10 @@ class Backgammon:
         if "panRight" in names:
             self.cursor = min(24, self.cursor + 1)
         if "f1" in names:
-            # Jump to the mirror point in the top/bottom half
-            if self.cursor <= 12:
-                self.cursor = 25 - self.cursor
-            else:
-                self.cursor = 25 - self.cursor
+            # Jump to the mirror point in the opposite half
+            self.cursor = 25 - self.cursor
         if "f4" in names:
-            if self.cursor <= 12:
-                self.cursor = 25 - self.cursor
-            else:
-                self.cursor = 25 - self.cursor
+            self.cursor = 25 - self.cursor
 
     # ------------------------------------------------------------------
     # Rendering helpers

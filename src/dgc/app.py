@@ -735,8 +735,8 @@ class MainFrame(wx.Frame):
         menu_top = 5  # Menu items start at row 5 (right after 4-row header).
         for idx, label in enumerate(MENU_ITEMS):
             row = menu_top + idx * 4
-            if row > 40:
-                break  # Skip items that exceed the 40-row display
+            if row + 3 > 40:
+                break  # Skip items whose text would overflow the 40-row display
             if idx == self.menu_index:
                 self._draw_menu_indicator(builder, row, 1)
             builder.render_text(label, row=row, col=6)
@@ -1096,9 +1096,6 @@ class MainFrame(wx.Frame):
             if moved:
                 prev = before.get("board")
                 if isinstance(prev, list):
-                    # Announce the tile that just moved into the blank
-                    br, bc = game.blank_row, game.blank_col
-                    tile = game.board[br][bc]  # blank cell is now empty (0)
                     # Find which tile just moved by comparing boards
                     for rr in range(4):
                         for cc in range(4):
