@@ -125,8 +125,8 @@ class Puzzle15:
     # ------------------------------------------------------------------
 
     # Layout constants (dot coordinates, 1-indexed)
-    _TOP = 2
-    _LEFT = 4
+    _TOP = 3
+    _LEFT = 2
     _CELL_W = 14
     _CELL_H = 9
 
@@ -174,7 +174,7 @@ class Puzzle15:
 
         # Focus indicator: short underline below selected cell while active.
         if self.winner is None:
-            focus_row = top + (self.sel_row + 1) * ch - 1
+            focus_row = top + (self.sel_row + 1) * ch - 2
             focus_col = left + self.sel_col * cw + 4
             builder.draw_line(focus_row, focus_col, 6)
 
