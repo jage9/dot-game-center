@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --group build
+
+      - name: Install dotpad wheel
+        shell: pwsh
+        run: |
+          $wheel = Get-ChildItem "vendor/dotpad/dotpad-*.whl" |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $wheel) { throw "dotpad wheel not found in vendor/dotpad/" }
+          uv pip install $wheel.FullName
+
+      - name: Build with PyInstaller
+        run: uv run --group build pyinstaller dgc.spec --noconfirm --clean
+
+      - name: Copy release files
+        shell: pwsh
+        run: |
+          Copy-Item "LICENSE" "dist/dgc/LICENSE" -Force
+          Copy-Item "README.md" "dist/dgc/README.md" -Force
+
+      - name: Zip distribution
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $zip = "dgc-${tag}-win64.zip"
+          Compress-Archive -Path "dist/dgc/*" -DestinationPath $zip
+          echo "ZIP_NAME=$zip" >> $env:GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP_NAME }}
+          generate_release_notes: true

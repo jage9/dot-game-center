@@ -30,6 +30,7 @@ class SoundManager:
             "hit": self._base / "hit.ogg",
             "place": self._base / "place.ogg",
             "select": self._base / "select.ogg",
+            "slide": self._base / "slide.ogg",
         }
         self._volumes = {
             "fire": 0.5,

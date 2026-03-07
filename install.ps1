@@ -11,22 +11,14 @@ $wheel = Get-ChildItem "vendor/dotpad/dotpad-*.whl" -ErrorAction SilentlyContinu
     Select-Object -First 1
 
 if (-not $wheel) {
-    throw "No dotpad wheel found in vendor/dotpad. Run setup.ps1 or copy dotpad-*.whl first."
+    throw "No dotpad wheel found in vendor/dotpad. Copy dotpad-*.whl there first."
 }
 
 Write-Host "Installing dotpad wheel: $($wheel.Name)"
 uv pip install "$($wheel.FullName)"
 
 Write-Host "Building DGC executable with PyInstaller..."
-uv run --group build pyinstaller `
-  --noconfirm `
-  --clean `
-  --windowed `
-  --noconsole `
-  --name dgc `
-  --paths src `
-  --add-data "assets/sounds;assets/sounds" `
-  src/dgc/__main__.py
+uv run --group build pyinstaller dgc.spec --noconfirm --clean
 
 if (Test-Path "dist/dgc") {
     Copy-Item "LICENSE" "dist/dgc/LICENSE" -Force

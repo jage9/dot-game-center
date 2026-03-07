@@ -13,13 +13,13 @@ import wx.grid as gridlib
 import dotpad as dp
 from dotpad.serial_driver import PacketType
 
-from .games import TicTacToe, Connect4, Battleship
+from .games import TicTacToe, Connect4, Battleship, Puzzle15
 from .games.utils import send_status
 from .sound import SoundManager
 from .speech import SpeechOutput
 
 
-GAME_ITEMS = ["Tic Tac Toe", "Connect 4", "Battleship"]
+GAME_ITEMS = ["Tic Tac Toe", "Connect 4", "Battleship", "15 Puzzle"]
 MENU_ITEMS = [*GAME_ITEMS, "About", "Exit"]
 APP_TITLE = "Dot Game Center"
 MENU_LINK_LABEL = "visit atguys.com"
@@ -291,8 +291,10 @@ class MainFrame(wx.Frame):
             game = TicTacToe()
         elif idx == 1:
             game = Connect4()
-        else:
+        elif idx == 2:
             game = Battleship()
+        else:
+            game = Puzzle15()
         self.current_game = game
         self._cpu_pending = False
         self.mode = "game"
@@ -341,7 +343,7 @@ class MainFrame(wx.Frame):
         try:
             return package_version("dgc")
         except PackageNotFoundError:
-            return "0.1"
+            return "dev"
 
     def show_about_dialog(self) -> None:
         """Show app About dialog."""
@@ -542,6 +544,8 @@ class MainFrame(wx.Frame):
             rows, cols = 3, 3
         elif isinstance(self.current_game, Connect4):
             rows, cols = self.current_game.rows, self.current_game.cols
+        elif isinstance(self.current_game, Puzzle15):
+            rows, cols = 4, 4
         else:
             rows, cols = 10, 10
         cur_rows = self.game_grid.GetNumberRows()
@@ -564,6 +568,11 @@ class MainFrame(wx.Frame):
         elif isinstance(self.current_game, Connect4):
             for r in range(rows):
                 self.game_grid.SetRowLabelValue(r, f"R{r + 1}")
+            for c in range(cols):
+                self.game_grid.SetColLabelValue(c, str(c + 1))
+        elif isinstance(self.current_game, Puzzle15):
+            for r in range(rows):
+                self.game_grid.SetRowLabelValue(r, str(r + 1))
             for c in range(cols):
                 self.game_grid.SetColLabelValue(c, str(c + 1))
         else:
@@ -604,6 +613,12 @@ class MainFrame(wx.Frame):
                         cell = "." if shot == 0 else "o" if shot == 1 else "x"
                         self.game_grid.SetCellValue(r, c, cell)
             self.game_grid.SetGridCursor(self.current_game.sel_row, self.current_game.sel_col)
+        elif isinstance(self.current_game, Puzzle15):
+            for r in range(4):
+                for c in range(4):
+                    val = self.current_game.board[r][c]
+                    self.game_grid.SetCellValue(r, c, str(val) if val else ".")
+            self.game_grid.SetGridCursor(self.current_game.sel_row, self.current_game.sel_col)
         self.game_grid.ForceRefresh()
 
     def _on_grid_select(self, event: gridlib.GridEvent) -> None:
@@ -619,6 +634,9 @@ class MainFrame(wx.Frame):
         elif isinstance(self.current_game, Connect4):
             self.current_game.sel_col = c
         elif isinstance(self.current_game, Battleship):
+            self.current_game.sel_row = r
+            self.current_game.sel_col = c
+        elif isinstance(self.current_game, Puzzle15):
             self.current_game.sel_row = r
             self.current_game.sel_col = c
         self.render_game()
@@ -735,6 +753,10 @@ class MainFrame(wx.Frame):
             state["orientation"] = game.orientation
             state["place_index"] = game.place_index
             state["player_shots"] = [row[:] for row in game.player_shots]
+        elif isinstance(game, Puzzle15):
+            state["sel_row"] = game.sel_row
+            state["sel_col"] = game.sel_col
+            state["board"] = [row[:] for row in game.board]
         state["winner"] = getattr(game, "winner", None)
         return state
 
@@ -784,6 +806,8 @@ class MainFrame(wx.Frame):
             if not isinstance(prev, list):
                 return False
             return self._count_marked(game.player_shots) > self._count_marked(prev)
+        if isinstance(game, Puzzle15):
+            return False
         return False
 
     def _schedule_cpu_turn(self) -> None:
@@ -1019,6 +1043,17 @@ class MainFrame(wx.Frame):
                     prev = before.get("player_shots")
                     if isinstance(prev, list) and self._count_marked(game.player_shots) == self._count_marked(prev):
                         parts.append(game.last_message)
+        elif isinstance(game, Puzzle15):
+            if moved:
+                row = game.sel_row
+                col = game.sel_col
+                old_row = int(before.get("sel_row", row))
+                old_col = int(before.get("sel_col", col))
+                if row != old_row or col != old_col:
+                    square = f"{chr(ord('A') + row)}{col + 1}"
+                    val = game.board[row][col]
+                    tile_label = "blank" if val == 0 else str(val)
+                    parts.append(f"{square}, {tile_label}")
 
         if parts:
             msg = ", ".join(parts)
@@ -1083,6 +1118,17 @@ class MainFrame(wx.Frame):
             if isinstance(prev, list):
                 if self._count_token(game.board, 1) > self._count_token(prev, 1):
                     self.sound.play("move1")
+            return
+        if isinstance(game, Puzzle15):
+            prev = before.get("board")
+            if isinstance(prev, list):
+                # A slide occurred if the board changed.
+                changed = any(
+                    game.board[r][c] != prev[r][c]
+                    for r in range(4) for c in range(4)
+                )
+                if changed:
+                    self.sound.play("slide")
 
     @staticmethod
     def _game_end_message(game: object) -> str:
@@ -1106,6 +1152,9 @@ class MainFrame(wx.Frame):
                 return "You win. F3 menu."
             if game.winner == "cpu":
                 return "You lose. F3 menu."
+        elif isinstance(game, Puzzle15):
+            if game.winner == "player":
+                return f"You win! Solved in {game.moves} moves. F3 menu."
         return ""
 
     def render_game(self) -> None:

@@ -39,6 +39,7 @@ Games can be controled both through the Dot Pad as well as the computer.
 - Tic Tac Toe
 - Connect 4
 - Battleship
+- 15 Puzzle (single-player sliding tile)
 
 ## In-Game Controls
 - DotPad: `panLeft/panRight` move to previous or next column, `F1/F4` move to previous or next row, `F2` perform action
@@ -47,6 +48,20 @@ Games can be controled both through the Dot Pad as well as the computer.
 
 ## Contributing
 Contributions are welcome. Please create an issue with bugs/feature ideas or submit a PR for consideration.
+
+## Building & Releasing
+
+**Local build** (produces `dist/dgc/`):
+```powershell
+.\install.ps1
+```
+
+**Cut a release** (bumps version, tags, pushes — GitHub Actions builds and publishes automatically):
+```powershell
+.\release.ps1 0.3
+```
+The workflow builds on `windows-latest`, zips `dist/dgc/`, and attaches it to a GitHub Release.
+First-time CI setup: run `uv run python _setup_ci.py` once to create `.github/workflows/release.yml`, then commit it.
 
 ## License
 - MIT
