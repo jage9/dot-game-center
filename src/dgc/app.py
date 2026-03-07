@@ -47,7 +47,6 @@ class MainFrame(wx.Frame):
         self._cpu_pending = False
         self._cpu_timer: wx.CallLater | None = None
         self._menu_render_pending = False
-        self._menu_force_pending = False
         self._last_menu_state: tuple[int, str] | None = None
         self._pad_lock = threading.Lock()
         self._write_queue: queue.Queue = queue.Queue(maxsize=1)
@@ -444,7 +443,6 @@ class MainFrame(wx.Frame):
             return
         if force:
             self._last_menu_state = None
-            self._menu_force_pending = True
         if self._menu_render_pending:
             return
         self._menu_render_pending = True
@@ -486,8 +484,8 @@ class MainFrame(wx.Frame):
                 self.on_menu_select(self.menu_index)
                 return
             if nav_pressed:
-                # Redraw on each menu navigation key press.
-                self.request_menu_render(force=False)
+                # Full redraw each keypress avoids stale indicator dots.
+                self.request_menu_render(force=True)
         else:
             if self.current_game:
                 if self._game_over():
@@ -663,9 +661,6 @@ class MainFrame(wx.Frame):
         self._menu_render_pending = False
         if self.mode != "menu":
             return
-        force = self._menu_force_pending
-        self._menu_force_pending = False
-        prev_index = self._last_menu_state[0] if self._last_menu_state else None
         state = (self.menu_index, self.mode)
         if state == self._last_menu_state:
             return
@@ -695,31 +690,16 @@ class MainFrame(wx.Frame):
             self._draw_menu_indicator(builder, link_row, 1)
         builder.render_text(MENU_LINK_LABEL, row=link_row, col=5)
 
-        # Full redraw on initial/menu-entry; partial redraw for indicator movement.
-        if force or prev_index is None:
-            rows = builder.rows()
+        rows = builder.rows()
 
-            def full_job() -> None:
-                if self.pad is None:
-                    return
-                for i, row_bytes in enumerate(rows, start=1):
-                    self.pad.send_display_line(i, row_bytes)
-                send_status(self.pad, "F1/F4 MOVE F2 SELECT")
+        def full_job() -> None:
+            if self.pad is None:
+                return
+            for i, row_bytes in enumerate(rows, start=1):
+                self.pad.send_display_line(i, row_bytes)
+            send_status(self.pad, "F1/F4 MOVE F2 SELECT")
 
-            self._enqueue_pad_write(full_job)
-        else:
-            rows = builder.rows()
-            cur_line = self._menu_indicator_line(self.menu_index)
-            prev_line = self._menu_indicator_line(prev_index)
-
-            def partial_job() -> None:
-                if self.pad is None:
-                    return
-                self.pad.send_display_line(cur_line, rows[cur_line - 1])
-                if prev_line != cur_line:
-                    self.pad.send_display_line(prev_line, rows[prev_line - 1])
-
-            self._enqueue_pad_write(partial_job)
+        self._enqueue_pad_write(full_job)
         self._last_menu_state = state
 
     @staticmethod
@@ -728,12 +708,6 @@ class MainFrame(wx.Frame):
         if index < len(MENU_ITEMS):
             return 9 + index * 4
         return 38
-
-    @staticmethod
-    def _menu_indicator_line(index: int) -> int:
-        """Return 1-based graphics line for the menu indicator row."""
-        dot_row = MainFrame._menu_item_row(index)
-        return ((dot_row - 1) // 4) + 1
 
     @staticmethod
     def _capture_game_state(game: object) -> dict[str, object]:
