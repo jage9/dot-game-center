@@ -10,8 +10,11 @@ from pathlib import Path
 
 try:
     import miniaudio
-except Exception:  # pragma: no cover - optional runtime dependency
+except Exception as exc:  # pragma: no cover - optional runtime dependency
+    _IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
     miniaudio = None
+else:
+    _IMPORT_ERROR = ""
 
 _LOG_PATH = Path(tempfile.gettempdir()) / "dgc_sound.log"
 
@@ -31,7 +34,7 @@ class SoundManager:
     def __init__(self) -> None:
         self._enabled = True
         self._loaded = False
-        self._devices: list[object] = []
+        self._playbacks: list[tuple[object, object]] = []
         self._base = self._resolve_sounds_dir()
         self._files = {
             "win": self._base / "win.ogg",
@@ -56,8 +59,11 @@ class SoundManager:
     def _resolve_sounds_dir() -> Path:
         """Resolve sounds path for source and PyInstaller runs."""
         if getattr(sys, "frozen", False):
-            base = Path(getattr(sys, "_MEIPASS", Path.cwd()))
-            return base / "assets" / "sounds"
+            exe_dir = Path(sys.executable).resolve().parent
+            bundled_dir = Path(getattr(sys, "_MEIPASS", exe_dir / "_internal")) / "assets" / "sounds"
+            if bundled_dir.exists():
+                return bundled_dir
+            return exe_dir / "_internal" / "assets" / "sounds"
         # src/dgc/sound.py -> project root is parents[2]
         return Path(__file__).resolve().parents[2] / "assets" / "sounds"
 
@@ -77,11 +83,12 @@ class SoundManager:
 
     def _load(self) -> None:
         if miniaudio is None:
-            _log("miniaudio not available (import failed)")
+            _log(f"miniaudio not available (import failed: {_IMPORT_ERROR})")
             return
         try:
             self._loaded = any(path.exists() for path in self._files.values())
-            _log(f"loaded={self._loaded} base={self._base}")
+            if not self._loaded:
+                _log(f"no sound files found in {self._base}")
         except Exception as e:
             _log(f"_load error: {type(e).__name__}: {e}")
             self._loaded = False
@@ -95,14 +102,14 @@ class SoundManager:
             return
         try:
             volume = self._volumes.get(event, 1.0)
-            # Keep recent device refs alive so one-shots can finish.
-            if len(self._devices) > 24:
-                self._devices = self._devices[-24:]
+            # Keep device and generator refs alive so one-shots can finish.
+            if len(self._playbacks) > 24:
+                self._playbacks = self._playbacks[-24:]
             device = miniaudio.PlaybackDevice()
             stream = self._scaled_stream(str(path), volume)
             next(stream)
             device.start(stream)
-            self._devices.append(device)
+            self._playbacks.append((device, stream))
         except Exception as e:
             _log(f"play({event}) error: {type(e).__name__}: {e}")
             return
