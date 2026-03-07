@@ -122,6 +122,14 @@ class MainFrame(wx.Frame):
             self._writer_thread.join(timeout=0.5)
         if self._cpu_timer is not None and self._cpu_timer.IsRunning():
             self._cpu_timer.Stop()
+        try:
+            self.sound.close()
+        except Exception:
+            pass
+        try:
+            self.speech.close()
+        except Exception:
+            pass
         with self._pad_lock:
             if self.pad is not None:
                 try:

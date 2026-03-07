@@ -81,6 +81,12 @@ class SoundManager:
         self._enabled = not self._enabled
         return self._enabled
 
+    def close(self) -> None:
+        """Stop and release any active playback devices."""
+        self._enabled = False
+        while self._playbacks:
+            self._dispose_playback(self._playbacks.pop())
+
     def _load(self) -> None:
         if miniaudio is None:
             _log(f"miniaudio not available (import failed: {_IMPORT_ERROR})")
@@ -103,8 +109,11 @@ class SoundManager:
         try:
             volume = self._volumes.get(event, 1.0)
             # Keep device and generator refs alive so one-shots can finish.
-            if len(self._playbacks) > 24:
-                self._playbacks = self._playbacks[-24:]
+            if len(self._playbacks) >= 24:
+                stale = self._playbacks[:-23]
+                self._playbacks = self._playbacks[-23:]
+                for playback in stale:
+                    self._dispose_playback(playback)
             device = miniaudio.PlaybackDevice()
             stream = self._scaled_stream(str(path), volume)
             next(stream)
@@ -113,6 +122,18 @@ class SoundManager:
         except Exception as e:
             _log(f"play({event}) error: {type(e).__name__}: {e}")
             return
+
+    @staticmethod
+    def _dispose_playback(playback: tuple[object, object]) -> None:
+        """Best-effort cleanup for a one-shot playback device."""
+        device, _stream = playback
+        for method_name in ("stop", "close"):
+            method = getattr(device, method_name, None)
+            if callable(method):
+                try:
+                    method()
+                except Exception:
+                    pass
 
     @staticmethod
     def _scale_pcm(chunk: object, volume: float) -> object:

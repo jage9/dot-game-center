@@ -36,3 +36,16 @@ class SpeechOutput:
         except Exception:
             # Avoid breaking gameplay if speech engine fails at runtime.
             pass
+
+    def close(self) -> None:
+        """Release speech backend resources if the backend exposes shutdown hooks."""
+        if self._speaker is None:
+            return
+        for method_name in ("stop", "close", "shutdown"):
+            method = getattr(self._speaker, method_name, None)
+            if callable(method):
+                try:
+                    method()
+                except Exception:
+                    pass
+        self._speaker = None
