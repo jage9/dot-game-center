@@ -2,14 +2,27 @@
 
 from __future__ import annotations
 
-from array import array
+import datetime
 import sys
+import tempfile
+from array import array
 from pathlib import Path
 
 try:
     import miniaudio
 except Exception:  # pragma: no cover - optional runtime dependency
     miniaudio = None
+
+_LOG_PATH = Path(tempfile.gettempdir()) / "dgc_sound.log"
+
+
+def _log(msg: str) -> None:
+    """Append a timestamped message to the sound diagnostic log."""
+    try:
+        with _LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(f"{datetime.datetime.now().isoformat()} {msg}\n")
+    except Exception:
+        pass
 
 
 class SoundManager:
@@ -64,10 +77,13 @@ class SoundManager:
 
     def _load(self) -> None:
         if miniaudio is None:
+            _log("miniaudio not available (import failed)")
             return
         try:
             self._loaded = any(path.exists() for path in self._files.values())
-        except Exception:
+            _log(f"loaded={self._loaded} base={self._base}")
+        except Exception as e:
+            _log(f"_load error: {type(e).__name__}: {e}")
             self._loaded = False
 
     def play(self, event: str) -> None:
@@ -87,7 +103,8 @@ class SoundManager:
             next(stream)
             device.start(stream)
             self._devices.append(device)
-        except Exception:
+        except Exception as e:
+            _log(f"play({event}) error: {type(e).__name__}: {e}")
             return
 
     @staticmethod
