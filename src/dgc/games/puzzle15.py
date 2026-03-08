@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -31,18 +32,39 @@ class Puzzle15:
     # ------------------------------------------------------------------
 
     def _make_solvable_board(self) -> list[list[int]]:
-        """Return a randomly shuffled, solvable 4×4 board."""
-        tiles = list(range(16))  # 0 = blank, 1-15 = tiles
-        while True:
-            random.shuffle(tiles)
-            if self._is_solvable(tiles):
-                return [tiles[i * 4:(i + 1) * 4] for i in range(4)]
+        """Return a shuffled solvable board via legal moves from goal."""
+        board = [
+            [1, 2, 3, 4],
+            [5, 6, 7, 8],
+            [9, 10, 11, 12],
+            [13, 14, 15, 0],
+        ]
+        blank_r, blank_c = 3, 3
+        prev_blank: tuple[int, int] | None = None
+        scramble_steps = 50
+        for _ in range(scramble_steps):
+            options: list[tuple[int, int]] = []
+            for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                rr, cc = blank_r + dr, blank_c + dc
+                if 0 <= rr < 4 and 0 <= cc < 4 and (rr, cc) != prev_blank:
+                    options.append((rr, cc))
+            if not options:
+                for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    rr, cc = blank_r + dr, blank_c + dc
+                    if 0 <= rr < 4 and 0 <= cc < 4:
+                        options.append((rr, cc))
+            rr, cc = random.choice(options)
+            board[blank_r][blank_c] = board[rr][cc]
+            board[rr][cc] = 0
+            prev_blank = (blank_r, blank_c)
+            blank_r, blank_c = rr, cc
+        return board
 
     @staticmethod
     def _is_solvable(tiles: list[int]) -> bool:
         """Return True if the flat tile list represents a solvable 15-puzzle.
 
-        For a 4×4 grid the position is solvable when:
+        For a 4x4 grid the position is solvable when:
         (number of inversions) + (row of blank counted from bottom, 1-indexed) is even.
         """
         inversions = 0
@@ -111,6 +133,108 @@ class Puzzle15:
                 if self.board[r][c] != expected:
                     return False
         return True
+
+    # ------------------------------------------------------------------
+    # Solver
+    # ------------------------------------------------------------------
+
+    _GOAL: tuple[int, ...] = (1, 2, 3, 4,
+                              5, 6, 7, 8,
+                              9, 10, 11, 12,
+                              13, 14, 15, 0)
+    _NEIGHBORS: tuple[tuple[int, ...], ...] = (
+        (1, 4),          # 0
+        (0, 2, 5),       # 1
+        (1, 3, 6),       # 2
+        (2, 7),          # 3
+        (0, 5, 8),       # 4
+        (1, 4, 6, 9),    # 5
+        (2, 5, 7, 10),   # 6
+        (3, 6, 11),      # 7
+        (4, 9, 12),      # 8
+        (5, 8, 10, 13),  # 9
+        (6, 9, 11, 14),  # 10
+        (7, 10, 15),     # 11
+        (8, 13),         # 12
+        (9, 12, 14),     # 13
+        (10, 13, 15),    # 14
+        (11, 14),        # 15
+    )
+    _GOAL_POS: tuple[int, ...] = (15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)
+
+    def solve_path(self, timeout_seconds: float = 20.0) -> Optional[list[tuple[int, int]]]:
+        """Return a move list [(row, col), ...] that solves the current board.
+
+        Each tuple identifies the tile location to select and slide into the blank.
+        Returns None when no path is found before timeout.
+        """
+        start = tuple(v for row in self.board for v in row)
+        if start == self._GOAL:
+            return []
+        move_indices = self._ida_solve(start, timeout_seconds=timeout_seconds)
+        if move_indices is None:
+            return None
+        return [(idx // 4, idx % 4) for idx in move_indices]
+
+    def _heuristic(self, state: list[int]) -> int:
+        """Manhattan distance heuristic."""
+        dist = 0
+        for i, v in enumerate(state):
+            if v == 0:
+                continue
+            gi = self._GOAL_POS[v]
+            dist += abs(i // 4 - gi // 4) + abs(i % 4 - gi % 4)
+        return dist
+
+    def _ida_solve(self, start: tuple[int, ...], timeout_seconds: float) -> Optional[list[int]]:
+        """IDA* solve; returns tile-index moves or None on timeout."""
+        state = list(start)
+        blank = state.index(0)
+        bound = self._heuristic(state)
+        path: list[int] = []
+        deadline = time.monotonic() + timeout_seconds
+
+        def search(g: int, blank_idx: int, prev_blank_idx: int, seen_depth: dict[tuple[int, ...], int]) -> int | bool:
+            if time.monotonic() >= deadline:
+                return -1
+            state_key = tuple(state)
+            best_g = seen_depth.get(state_key)
+            if best_g is not None and best_g <= g:
+                return 10**9
+            seen_depth[state_key] = g
+            h = self._heuristic(state)
+            if h == 0:
+                return True
+            f = g + h
+            if f > bound:
+                return f
+            min_next = 10**9
+            for nxt_blank in self._NEIGHBORS[blank_idx]:
+                if nxt_blank == prev_blank_idx:
+                    continue
+                # Tile at nxt_blank slides into blank.
+                state[blank_idx], state[nxt_blank] = state[nxt_blank], state[blank_idx]
+                path.append(nxt_blank)
+                result = search(g + 1, nxt_blank, blank_idx, seen_depth)
+                if result is True:
+                    return True
+                path.pop()
+                state[blank_idx], state[nxt_blank] = state[nxt_blank], state[blank_idx]
+                if result == -1:
+                    return -1
+                if isinstance(result, int) and result < min_next:
+                    min_next = result
+            return min_next
+
+        while True:
+            result = search(0, blank, -1, {})
+            if result is True:
+                return path[:]
+            if result == -1 or not isinstance(result, int):
+                return None
+            if result >= 10**9:
+                return None
+            bound = result
 
     # ------------------------------------------------------------------
     # AI stub (no CPU opponent)
@@ -191,4 +315,4 @@ class Puzzle15:
         if self.winner == "player":
             send_status(pad, "SOLVED F3 MENU")
         else:
-            send_status(pad, "PAN/F1/F4 MOVE F2 SLIDE")
+            send_status(pad, "MOVE F2 SLIDE F3 SOLVE")

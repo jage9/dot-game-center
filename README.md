@@ -22,7 +22,7 @@ Place 4 of yor tiles in a row to win.
 First, place your 5 ships, then try to destroy  your opponent's ships before they destroy yours.
 
 # 15 Puzzle
-The traditional sliding tile puzzle. Put the numbers in order from 1 to 15.
+The traditional sliding tile puzzle. Put the numbers in order from 1 to 15. If you get stuck, press F3 to have the computer autosolve.
 
 ## Controls
 Games can be controled both through the Dot Pad as well as the computer.

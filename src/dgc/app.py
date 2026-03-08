@@ -46,6 +46,9 @@ class MainFrame(wx.Frame):
         self.about_dialog: wx.Dialog | None = None
         self._cpu_pending = False
         self._cpu_timer: wx.CallLater | None = None
+        self._puzzle_auto_timer: wx.CallLater | None = None
+        self._puzzle_auto_path: list[tuple[int, int]] = []
+        self._puzzle_auto_solving = False
         self._menu_render_pending = False
         self._last_menu_state: tuple[int, str] | None = None
         self._pad_lock = threading.Lock()
@@ -122,6 +125,8 @@ class MainFrame(wx.Frame):
             self._writer_thread.join(timeout=0.5)
         if self._cpu_timer is not None and self._cpu_timer.IsRunning():
             self._cpu_timer.Stop()
+        if self._puzzle_auto_timer is not None and self._puzzle_auto_timer.IsRunning():
+            self._puzzle_auto_timer.Stop()
         try:
             self.sound.close()
         except Exception:
@@ -292,6 +297,7 @@ class MainFrame(wx.Frame):
         self.start_game(idx)
 
     def start_game(self, idx: int) -> None:
+        self._cancel_puzzle_autosolve()
         if MENU_ITEMS[idx] not in GAME_ITEMS:
             return
         if idx == 0:
@@ -327,6 +333,7 @@ class MainFrame(wx.Frame):
         self.SetFocus()
 
     def back_to_menu(self) -> None:
+        self._cancel_puzzle_autosolve()
         self._cpu_pending = False
         if self._cpu_timer is not None and self._cpu_timer.IsRunning():
             self._cpu_timer.Stop()
@@ -469,12 +476,12 @@ class MainFrame(wx.Frame):
                     pass
             return
 
-        if self.mode == "game" and self._cpu_pending:
-            return
-
         # Global menu chord
         if "f1" in names and "f4" in names:
             self.back_to_menu()
+            return
+
+        if self.mode == "game" and self._cpu_pending:
             return
 
         if self.mode == "menu":
@@ -501,6 +508,9 @@ class MainFrame(wx.Frame):
                         self.back_to_menu()
                         return
                     return
+                if "f3" in names and isinstance(self.current_game, Puzzle15):
+                    self._start_puzzle_autosolve()
+                    return
                 before = self._capture_game_state(self.current_game)
                 self.current_game.handle_key(names)
                 self._speak_game_event(names, before, self.current_game)
@@ -522,8 +532,8 @@ class MainFrame(wx.Frame):
                 return
             if self._cpu_pending:
                 return
-            if code == wx.WXK_F3 and self._game_over():
-                self.back_to_menu()
+            if code == wx.WXK_F3:
+                self.on_pad_keys(["f3"])
                 return
             if code == wx.WXK_LEFT:
                 self.on_pad_keys(["panLeft"])
@@ -654,6 +664,7 @@ class MainFrame(wx.Frame):
 
     def _restart_game(self) -> None:
         """Restart the active game in place."""
+        self._cancel_puzzle_autosolve()
         if not self.current_game:
             return
         self.current_game.reset()
@@ -791,6 +802,110 @@ class MainFrame(wx.Frame):
         if isinstance(game, Puzzle15):
             return False
         return False
+
+    def _cancel_puzzle_autosolve(self) -> None:
+        """Stop 15-puzzle auto-solve mode and clear pending path."""
+        self._puzzle_auto_solving = False
+        self._puzzle_auto_path.clear()
+        if self._puzzle_auto_timer is not None and self._puzzle_auto_timer.IsRunning():
+            self._puzzle_auto_timer.Stop()
+        self._cpu_pending = False
+
+    def _start_puzzle_autosolve(self) -> None:
+        """Compute and animate a 15-puzzle solution on F3."""
+        if not isinstance(self.current_game, Puzzle15):
+            return
+        if self.current_game.winner is not None or self._puzzle_auto_solving:
+            return
+
+        game_ref = self.current_game
+        self._puzzle_auto_solving = True
+        self._cpu_pending = True
+        self._set_status("Computer solving...")
+        if self.speech.enabled:
+            self.speech.speak("Computer solving.")
+        flat = tuple(v for row in game_ref.board for v in row)
+        manhattan = 0
+        for idx, val in enumerate(flat):
+            if val == 0:
+                continue
+            goal = val - 1
+            manhattan += abs((idx // 4) - (goal // 4)) + abs((idx % 4) - (goal % 4))
+        # Scale solver time with board difficulty; keep a practical minimum.
+        solve_timeout = max(120.0, float(manhattan * 12))
+
+        def worker() -> None:
+            path = game_ref.solve_path(timeout_seconds=solve_timeout)
+            wx.CallAfter(self._on_puzzle_solution_ready, game_ref, path)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_puzzle_solution_ready(self, game_ref: Puzzle15, path: list[tuple[int, int]] | None) -> None:
+        """Begin timed playback after background solve completes."""
+        if not self._puzzle_auto_solving:
+            return
+        if self.mode != "game" or self.current_game is not game_ref:
+            self._cancel_puzzle_autosolve()
+            return
+        if path is None:
+            self._set_status("Solve timed out. Press F3 to retry.")
+            if self.speech.enabled:
+                self.speech.speak("Solve timed out.")
+            self._cancel_puzzle_autosolve()
+            return
+
+        self._puzzle_auto_path = list(path)
+        if not self._puzzle_auto_path:
+            self._cancel_puzzle_autosolve()
+            end_msg = self._game_end_message(game_ref)
+            if end_msg:
+                self._set_status(end_msg)
+            return
+
+        self._set_status(f"Computer solving in {len(self._puzzle_auto_path)} moves.")
+        self._puzzle_auto_timer = wx.CallLater(1000, self._run_puzzle_autosolve_step)
+
+    def _run_puzzle_autosolve_step(self) -> None:
+        """Apply one solved move every second and refresh board output."""
+        if not self._puzzle_auto_solving:
+            return
+        if not isinstance(self.current_game, Puzzle15):
+            self._cancel_puzzle_autosolve()
+            return
+        game = self.current_game
+        if game.winner is not None:
+            self._cancel_puzzle_autosolve()
+            return
+        if not self._puzzle_auto_path:
+            self._cancel_puzzle_autosolve()
+            return
+        r, c = self._puzzle_auto_path.pop(0)
+        before = [row[:] for row in game.board]
+        game.sel_row = r
+        game.sel_col = c
+        game.handle_key(["f2"])
+        changed = any(
+            game.board[rr][cc] != before[rr][cc]
+            for rr in range(4) for cc in range(4)
+        )
+        if changed:
+            self.sound.play("slide")
+        self._update_game_grid()
+        self.render_game()
+
+        if game.winner is not None:
+            self._cancel_puzzle_autosolve()
+            end_msg = self._game_end_message(game)
+            if end_msg:
+                self._set_status(end_msg)
+                if self.speech.enabled:
+                    self.speech.speak(end_msg, interrupt=False)
+                self.sound.play("win")
+            return
+        if not self._puzzle_auto_path:
+            self._cancel_puzzle_autosolve()
+            return
+        self._puzzle_auto_timer = wx.CallLater(1000, self._run_puzzle_autosolve_step)
 
     def _schedule_cpu_turn(self) -> None:
         """Schedule CPU move 1.5-2.0 seconds after player action."""
