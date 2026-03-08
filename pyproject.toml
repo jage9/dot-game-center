@@ -1,6 +1,6 @@
 [project]
 name = "dgc"
-version = "0.2.3"
+version = "0.2.4"
 description = "Dot Game Center (wxPython + DotPad)"
 readme = "README.md"
 requires-python = ">=3.12"
